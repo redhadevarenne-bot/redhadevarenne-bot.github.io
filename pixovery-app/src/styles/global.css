@@ -183,7 +183,11 @@ input,textarea{font:inherit}
 [data-floppyfloat]{
   display:block;width:100%;height:100%;
   perspective:1000px;
-  animation:floppy-float 6.4s ease-in-out infinite;
+  /* 5,3 s contre 3,8 s pour le cone : le rapport (0,717) n'est pas une
+     fraction simple, donc les deux mouvements ne se resynchronisent
+     jamais sur un cycle court. Avec 4 s et 6 s ils retomberaient en
+     phase toutes les 12 s et le flottement paraitrait mecanique. */
+  animation:floppy-float 5.3s ease-in-out infinite;
 }
 [data-floppy]{
   --floppy-tilt:-8deg;
@@ -191,7 +195,7 @@ input,textarea{font:inherit}
   display:block;width:100%;height:100%;
   transform-style:preserve-3d;
   transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot))) rotateX(var(--mouse-tilt));
-  animation:floppy-sway 4.6s ease-in-out infinite;
+  animation:floppy-sway 3.8s linear infinite;
   /* L'ordre compte : le JS ecrit transitionDuration avec trois valeurs,
      dans cet ordre. */
   transition-property:--mouse-rot,--mouse-tilt,--floppy-sway;
@@ -209,11 +213,39 @@ input,textarea{font:inherit}
   0%,100%{transform:translate3d(0,calc(-9*var(--u)),0)}
   50%    {transform:translate3d(0,calc(9*var(--u)),0)}
 }
+/* Le va-et-vient de repos, en CONE et non en balancier.
+
+   Un balancier sur un seul axe s'arrete a chaque extremite : la vitesse
+   y est nulle, et on VOIT la disquette se figer deux fois par cycle.
+   C'est ce que faisaient les quatre keyframes d'origine, aggravees par
+   un ease-in-out qui ralentissait encore a chaque palier.
+
+   Ici les deux axes sont dephases d'un quart de tour : rotateY suit un
+   sinus, rotateX un cosinus. Quand l'un est a son extreme, donc
+   immobile, l'autre passe par zero a sa vitesse maximale. Le coin de la
+   disquette decrit un cercle lent et ne s'arrete jamais.
+
+   Timing LINEAIRE, obligatoire : un ease-in-out remettrait un temps mort
+   sur CHAQUE palier, y compris ceux qu'on vient d'ajouter, et ruinerait
+   le dephasage. Huit paliers echantillonnent le cercle d'assez pres pour
+   qu'on ne voie pas le polygone.
+
+   L'amplitude du hochement est derivee de --floppy-sway (45 %) : le
+   survol qui ouvre le sway ouvre le cone du meme geste, sans deuxieme
+   variable a tenir.
+
+   L'ordre des transformations est inchange : rotate() reste avant
+   rotateY(), rotateX() reste apres. */
 @keyframes floppy-sway{
-  0%,100%{transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot)))                     rotateX(var(--mouse-tilt))}
-  25%    {transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot) + var(--floppy-sway))) rotateX(var(--mouse-tilt))}
-  50%    {transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot)))                     rotateX(var(--mouse-tilt))}
-  75%    {transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot) - var(--floppy-sway))) rotateX(var(--mouse-tilt))}
+  0%     {transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot))) rotateX(calc(var(--mouse-tilt) + var(--floppy-sway) * 0.450))}
+  12.5%  {transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot) + var(--floppy-sway) * 0.707)) rotateX(calc(var(--mouse-tilt) + var(--floppy-sway) * 0.318))}
+  25%    {transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot) + var(--floppy-sway))) rotateX(calc(var(--mouse-tilt)))}
+  37.5%  {transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot) + var(--floppy-sway) * 0.707)) rotateX(calc(var(--mouse-tilt) - var(--floppy-sway) * 0.318))}
+  50%    {transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot))) rotateX(calc(var(--mouse-tilt) - var(--floppy-sway) * 0.450))}
+  62.5%  {transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot) - var(--floppy-sway) * 0.707)) rotateX(calc(var(--mouse-tilt) - var(--floppy-sway) * 0.318))}
+  75%    {transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot) - var(--floppy-sway))) rotateX(calc(var(--mouse-tilt)))}
+  87.5%  {transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot) - var(--floppy-sway) * 0.707)) rotateX(calc(var(--mouse-tilt) + var(--floppy-sway) * 0.318))}
+  100%   {transform:rotate(var(--floppy-tilt)) rotateY(calc(var(--floppy-rot) + var(--mouse-rot))) rotateX(calc(var(--mouse-tilt) + var(--floppy-sway) * 0.450))}
 }
 
 /* ---------------------------------------------------------------------

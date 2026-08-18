@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url>
+    <loc>https://www.pixovery.com/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+    <image:image><image:loc>https://www.pixovery.com/assets/portfolio/creation-logo-identite-visuelle-donuts-crazy-donutz.webp</image:loc></image:image>
+    <image:image><image:loc>https://www.pixovery.com/assets/portfolio/identite-visuelle-marque-sport-cyclisme-ashkan-sports.webp</image:loc></image:image>
+    <image:image><image:loc>https://www.pixovery.com/assets/portfolio/creation-logo-livraison-repas-bring-eat.webp</image:loc></image:image>
+    <image:image><image:loc>https://www.pixovery.com/assets/portfolio/identite-visuelle-bar-cocktails-bikini-bar.webp</image:loc></image:image>
+    <image:image><image:loc>https://www.pixovery.com/assets/portfolio/creation-logo-burger-fast-food-top-bun.webp</image:loc></image:image>
+    <image:image><image:loc>https://www.pixovery.com/assets/portfolio/identite-visuelle-visite-virtuelle-matterport-neometris.webp</image:loc></image:image>
+    <image:image><image:loc>https://www.pixovery.com/assets/portfolio/identite-visuelle-accessoires-mode-pimp-up-paris.webp</image:loc></image:image>
+    <image:image><image:loc>https://www.pixovery.com/assets/portfolio/identite-visuelle-friperie-mode-seconde-main-o-bohneur-demy.webp</image:loc></image:image>
+    <image:image><image:loc>https://www.pixovery.com/assets/portfolio/creation-logo-packaging-fish-and-chips-mr-fish.webp</image:loc></image:image>
+    <image:image><image:loc>https://www.pixovery.com/assets/portfolio/identite-visuelle-restaurant-chinois-jung-fu.webp</image:loc></image:image>
+    <image:image><image:loc>https://www.pixovery.com/assets/portfolio/identite-visuelle-restaurant-sushi-kabuki-sushi.webp</image:loc></image:image>
+  </url>
+</urlset>

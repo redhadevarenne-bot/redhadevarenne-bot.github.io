@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Pixovery — proto scroll (démontage)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --pink:#E2006B; --pink-b:#EC0070;
+  --violet:#7A01FF; --violet-b:#8F2BFF;
+  --txt:#EDEDED; --muted:#9A9CA1;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:auto}
+body{
+  margin:0; background:#000; color:var(--txt);
+  font-family:Barlow, system-ui, sans-serif;
+  overflow-x:hidden;
+}
+
+/* ---- couche scène : les pièces, fixes, pilotées par le scroll ---- */
+#scene{
+  position:fixed; inset:0; z-index:2; pointer-events:none;
+  filter:url(#pxo-smear);
+}
+#scene .part{
+  position:absolute; left:0; top:0;
+  width:auto; height:auto;
+  will-change:transform, opacity;
+  transform-origin:50% 50%;
+}
+#scene .part img{display:block; width:100%; height:auto}
+
+/* le personnage entier, dans le hero uniquement */
+#whole{
+  position:fixed; z-index:1; pointer-events:none;
+  right:6vw; top:50%; width:min(46vw,620px);
+  transform:translateY(-50%);
+  will-change:opacity, transform;
+}
+#whole img{display:block;width:100%;height:auto}
+
+/* ---- nappes de lumière ---- */
+.glow{position:fixed;inset:0;z-index:0;pointer-events:none;mix-blend-mode:screen}
+.glow i{position:absolute;display:block;border-radius:50%;filter:blur(70px);opacity:.5}
+
+/* ---- contenu ---- */
+main{position:relative; z-index:3}
+section{
+  min-height:100vh; display:flex; align-items:center;
+  padding:0 8vw; position:relative;
+}
+.col{width:min(430px,42vw)}
+.eyebrow{
+  font-size:11px; font-weight:600; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--muted); margin:0 0 18px;
+}
+h1{
+  margin:0; font-weight:800; text-transform:uppercase;
+  font-size:clamp(46px,6.4vw,96px); line-height:.94; letter-spacing:-.01em;
+}
+h1 em{font-style:normal;color:var(--violet-b)}
+h2{
+  margin:0 0 20px; font-weight:800; text-transform:uppercase;
+  font-size:clamp(30px,3.6vw,54px); line-height:1;
+}
+p{margin:0 0 14px; font-size:16px; line-height:1.6; color:rgba(255,255,255,.8)}
+.line{display:block;overflow:hidden;padding-bottom:.06em}
+.line > i{display:block;font-style:normal;transform:translateY(110%)}
+
+#hero .col{width:min(520px,46vw)}
+#hero p{margin-top:26px;max-width:380px}
+.cta{
+  display:inline-flex;align-items:center;gap:14px;margin-top:32px;
+  background:var(--pink);color:#fff;text-decoration:none;
+  height:46px;padding:0 26px;border-radius:4px;
+  font-size:12.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  transition:background .25s ease, transform .25s ease;
+}
+.cta:hover{background:var(--pink-b);transform:translateY(-2px)}
+.cta:focus-visible{outline:2px solid var(--violet-b);outline-offset:3px}
+
+/* alternance gauche / droite : la pièce occupe le côté libre */
+#portfolio, #contact{justify-content:flex-end;text-align:right}
+#portfolio .col, #contact .col{margin-left:auto}
+
+/* barre de vitesse (lecture du prototype, pas du design final) */
+#hud{
+  position:fixed;left:0;bottom:0;z-index:9;height:2px;width:0%;
+  background:linear-gradient(90deg,var(--violet-b),var(--pink));
+}
+#tag{
+  position:fixed;right:14px;bottom:14px;z-index:9;
+  font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#4a4a52;
+}
+
+@media (prefers-reduced-motion:reduce){
+  #scene{filter:none}
+}
+</style>
+</head>
+<body>
+
+<!-- filtre : déformation pilotée par la VITESSE du scroll -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="pxo-smear" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.012 0.006" numOctaves="2" seed="7" result="noise"/>
+    <feDisplacementMap id="pxo-disp" in="SourceGraphic" in2="noise" scale="0" xChannelSelector="R" yChannelSelector="G" result="disp"/>
+    <feGaussianBlur id="pxo-blur" in="disp" stdDeviation="0 0"/>
+  </filter>
+</svg>
+
+<div class="glow" aria-hidden="true">
+  <i style="left:52%;top:18%;width:44vw;height:44vw;background:radial-gradient(circle,rgba(122,1,255,.30),transparent 65%)"></i>
+  <i style="left:-8%;top:58%;width:38vw;height:38vw;background:radial-gradient(circle,rgba(226,0,107,.16),transparent 65%)"></i>
+</div>
+
+<div id="whole"><img src="/assets/hero-cut-a.webp" alt="" width="1100" height="1100"></div>
+
+<div id="scene" aria-hidden="true">
+  <div class="part" data-part="bulb"><img src="/assets/parts/bulb.png" alt="" width="189" height="317"></div>
+  <div class="part" data-part="arm"><img src="/assets/parts/arm.png" alt="" width="147" height="303"></div>
+  <div class="part" data-part="mug"><img src="/assets/parts/mug.png" alt="" width="304" height="396"></div>
+  <div class="part" data-part="head"><img src="/assets/parts/head.png" alt="" width="245" height="294"></div>
+  <div class="part" data-part="torso"><img src="/assets/parts/torso.png" alt="" width="276" height="247"></div>
+  <div class="part" data-part="legs"><img src="/assets/parts/legs.png" alt="" width="327" height="295"></div>
+</div>
+
+<main>
+  <section id="hero">
+    <div class="col">
+      <h1>
+        <span class="line"><i>Faisons</i></span>
+        <span class="line"><i>décoller</i></span>
+        <span class="line"><i>vos <em>idées</em></i></span>
+      </h1>
+      <p>Bienvenue sur Pixovery.<br>Création graphique &amp; direction artistique</p>
+      <a class="cta" href="#portfolio">Voir mes projets <span>&rarr;</span></a>
+    </div>
+  </section>
+
+  <section id="services">
+    <div class="col">
+      <p class="eyebrow">Ce que je fabrique</p>
+      <h2>Services</h2>
+      <p>Logo, identité visuelle, charte graphique. Affiches, packaging, cartes. Sites vitrines et illustration sur mesure.</p>
+      <p>Une marque se reconnaît avant de se lire. Je travaille ce moment-là.</p>
+    </div>
+  </section>
+
+  <section id="portfolio">
+    <div class="col">
+      <p class="eyebrow">Onze marques, onze univers</p>
+      <h2>Portfolio</h2>
+      <p>Crazy Donutz, Ashkan Sports, Bring Eat, Bikini Bar, Top Bun, Neometris, Pimp'Up, Ô Bohneur D'Emy, Mr. Fish, Jung Fu, Kabuki Sushi.</p>
+    </div>
+  </section>
+
+  <section id="apropos">
+    <div class="col">
+      <p class="eyebrow">Derrière les lunettes</p>
+      <h2>À propos</h2>
+      <p>Redha Devarenne, graphiste freelance en Haute-Savoie. Je travaille à distance, en France, en Suisse et ailleurs.</p>
+    </div>
+  </section>
+
+  <section id="contact">
+    <div class="col">
+      <p class="eyebrow">La suite</p>
+      <h2>Contact</h2>
+      <p>Dites-moi ce que vous voulez faire décoller.</p>
+      <a class="cta" href="mailto:pixovery@gmail.com">pixovery@gmail.com <span>&rarr;</span></a>
+    </div>
+  </section>
+</main>
+
+<div id="hud"></div>
+<div id="tag">proto — scroll</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/ScrollTrigger.min.js"></script>
+<script>
+gsap.registerPlugin(ScrollTrigger);
+
+const FULL  = new URLSearchParams(location.search).has('motion');
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches && !FULL;
+
+const vw = () => innerWidth, vh = () => innerHeight;
+
+/* ---------------------------------------------------------------
+   Les 6 pièces. Une position par étape du scroll.
+   x / y en fraction de viewport, s = échelle, r = rotation.
+   --------------------------------------------------------------- */
+const CHOREO = {
+  bulb : {w:189, steps:[
+    {x:.74,y:.46,s:.55,r:0,  o:0},        // hero : cachée, c'est hero-cut-a qui joue
+    {x:.72,y:.40,s:.85,r:-8, o:1},        // services
+    {x:.18,y:.30,s:.42,r:24, o:.5},       // portfolio : s'éloigne
+    {x:.26,y:.66,s:.50,r:-14,o:.6},       // à propos
+    {x:.30,y:.44,s:.95,r:0,  o:1}         // contact : revient, en avant
+  ]},
+  arm : {w:147, steps:[
+    {x:.68,y:.52,s:.55,r:0,  o:0},
+    {x:.55,y:.66,s:.80,r:38, o:1},
+    {x:.36,y:.16,s:.55,r:-52,o:.45},
+    {x:.62,y:.22,s:.60,r:96, o:.5},
+    {x:.46,y:.70,s:.75,r:12, o:.85}
+  ]},
+  mug : {w:304, steps:[
+    {x:.62,y:.62,s:.45,r:0,  o:0},
+    {x:.22,y:.74,s:.55,r:-6, o:.5},
+    {x:.30,y:.52,s:1.05,r:4, o:1},        // portfolio : la pièce du chapitre
+    {x:.14,y:.20,s:.50,r:-18,o:.4},
+    {x:.20,y:.34,s:.60,r:8,  o:.7}
+  ]},
+  head : {w:245, steps:[
+    {x:.72,y:.30,s:.55,r:0,  o:0},
+    {x:.84,y:.14,s:.45,r:12, o:.45},
+    {x:.62,y:.82,s:.50,r:-20,o:.5},
+    {x:.72,y:.44,s:1.00,r:6, o:1},        // à propos : la pièce du chapitre
+    {x:.58,y:.18,s:.55,r:-10,o:.7}
+  ]},
+  torso : {w:276, steps:[
+    {x:.66,y:.44,s:.55,r:0,  o:0},
+    {x:.30,y:.24,s:.50,r:-16,o:.4},
+    {x:.72,y:.76,s:.60,r:22, o:.5},
+    {x:.76,y:.62,s:.55,r:-8, o:.5},
+    {x:.56,y:.50,s:.85,r:0,  o:.9}
+  ]},
+  legs : {w:327, steps:[
+    {x:.70,y:.66,s:.55,r:0,  o:0},
+    {x:.90,y:.30,s:.48,r:26, o:.4},
+    {x:.58,y:.24,s:.52,r:-30,o:.45},
+    {x:.16,y:.76,s:.55,r:16, o:.5},
+    {x:.42,y:.24,s:.70,r:-6, o:.8}
+  ]}
+};
+
+const els = {};
+document.querySelectorAll('#scene .part').forEach(el => {
+  els[el.dataset.part] = el;
+  el.style.width = CHOREO[el.dataset.part].w + 'px';
+});
+
+/* place une pièce sur une étape, sans transition */
+function place(name, i){
+  const s = CHOREO[name].steps[i], el = els[name];
+  gsap.set(el, {
+    x: s.x*vw() - CHOREO[name].w/2,
+    y: s.y*vh() - CHOREO[name].w/2,
+    scale: s.s, rotation: s.r, opacity: s.o
+  });
+}
+Object.keys(CHOREO).forEach(n => place(n, 0));
+
+/* ---------------------------------------------------------------
+   Une timeline scrubbée : hero -> services -> portfolio -> à propos -> contact
+   --------------------------------------------------------------- */
+const SECTIONS = ['hero','services','portfolio','apropos','contact'];
+
+function buildParts(){
+  SECTIONS.forEach((id, i) => {
+    if (i === 0) return;
+    ScrollTrigger.create({
+      trigger: '#' + id,
+      start: 'top bottom',
+      end: 'top center',
+      scrub: REDUCE ? true : 1.1,
+      onUpdate: self => {
+        const t = self.progress;
+        Object.keys(CHOREO).forEach(name => {
+          const a = CHOREO[name].steps[i-1], b = CHOREO[name].steps[i];
+          const W = CHOREO[name].w;
+          gsap.set(els[name], {
+            x: (a.x + (b.x-a.x)*t)*vw() - W/2,
+            y: (a.y + (b.y-a.y)*t)*vh() - W/2,
+            scale: a.s + (b.s-a.s)*t,
+            rotation: a.r + (b.r-a.r)*t,
+            opacity: a.o + (b.o-a.o)*t
+          });
+        });
+      }
+    });
+  });
+}
+buildParts();
+
+/* le personnage entier s'efface quand les pièces prennent le relais */
+gsap.to('#whole', {
+  opacity: 0, scale: .94, ease:'none',
+  scrollTrigger:{ trigger:'#services', start:'top bottom', end:'top 60%', scrub:true }
+});
+
+/* ---------------------------------------------------------------
+   Le filtre : piloté par la VITESSE, pas par la position.
+   C'est ce qui donne l'élasticité — on va vite, ça file ; on ralentit,
+   ça se recompose.
+   --------------------------------------------------------------- */
+const disp = document.getElementById('pxo-disp');
+const blur = document.getElementById('pxo-blur');
+let smear = 0, target = 0;
+
+if (!REDUCE){
+  ScrollTrigger.create({
+    onUpdate: self => {
+      const v = Math.abs(self.getVelocity());
+      target = Math.min(v / 90, 34);          // plafonné : jamais de bouillie
+    }
+  });
+  const tick = () => {
+    smear += (target - smear) * 0.10;         // montée douce
+    target *= 0.90;                            // retour à zéro dès qu'on s'arrête
+    disp.setAttribute('scale', smear.toFixed(2));
+    blur.setAttribute('stdDeviation', (smear*0.11).toFixed(2) + ' ' + (smear*0.30).toFixed(2));
+    document.getElementById('hud').style.width = (smear/34*100).toFixed(1) + '%';
+    requestAnimationFrame(tick);
+  };
+  tick();
+} else {
+  document.getElementById('tag').textContent = 'proto — mouvement réduit · ajoute ?motion=full';
+}
+
+/* ---------------------------------------------------------------
+   Typographie : les lignes montent, une fois, à l'entrée.
+   --------------------------------------------------------------- */
+gsap.to('#hero .line > i', {
+  y: 0, duration: REDUCE ? .4 : 1.15, stagger: REDUCE ? 0 : .09,
+  ease:'expo.out', delay:.15
+});
+gsap.set('#hero p, #hero .cta', {opacity:0, y:16});
+gsap.to('#hero p, #hero .cta', {opacity:1, y:0, duration:.9, stagger:.12, delay:.55, ease:'expo.out'});
+
+document.querySelectorAll('section:not(#hero) .col > *').forEach(el => {
+  gsap.set(el, {opacity:0, y:REDUCE ? 8 : 26});
+  gsap.to(el, {
+    opacity:1, y:0, duration: REDUCE ? .4 : .9, ease:'expo.out',
+    scrollTrigger:{ trigger: el, start:'top 88%' }
+  });
+});
+
+addEventListener('resize', () => ScrollTrigger.refresh());
+</script>
+</body>
+</html>
