@@ -311,6 +311,11 @@ export default class PixoveryPage extends React.Component {
                  pave tactile envoie des dizaines de petits deltas : il faut
                  un vrai geste, pas un frolement.
        PAUSE   : au-dela de ce silence, c'est un nouveau geste. */
+    /* Amplitude du lancer de la premiere disquette. this.lenis est null
+       quand « reduire les animations » est actif sans ?motion=full : on
+       raccourcit le geste au lieu de le supprimer. Degrader, jamais couper. */
+    const LANCER = this.lenis ? 1 : 0.35;
+
     const DUREE = 640, REPOS = 90, SEUIL = 46, PAUSE = 180;
     /* Duree du passage quand c'est Lenis qui bouge la page. Plus longue
        que DUREE : maintenant que tout le site glisse sur ~1 s, un
@@ -326,6 +331,11 @@ export default class PixoveryPage extends React.Component {
 
     /* le rail suit la position de scroll : pendant le glissement doux, il
        se deplace avec, donc le passage reste fluide au lieu de sauter */
+    /* NE BRANCHE JAMAIS cadence() SUR gsap.ticker. Essaye : cette fonction
+       contient le recalage d'entree de la section (scrollTo + verrou).
+       Appelee a chaque frame, elle recale la section soixante fois par
+       seconde et LE SCROLL DE TOUT LE SITE MEURT. Le vol reste pilote par
+       le scroll, ce qui n'exige aucune boucle. */
     const cadence = () => {
       file = false;
       const r = sec.getBoundingClientRect();
@@ -355,13 +365,19 @@ export default class PixoveryPage extends React.Component {
       }
       etaitTenue = t0;
       dernierY = window.scrollY;
+      /* Progression de l'ARRIVEE de la section, etalee sur CINQ ecrans de
+         defilement et non un seul. Sert au lancer de la premiere
+         disquette, plus bas. */
+      const eIn = Math.max(0, Math.min(1, 1 - r.top / (5 * window.innerHeight)));
       const p = Math.max(0, Math.min(1, -r.top / course()));
       rail.style.transform = 'translate3d(' + (-p * (n - 1) * 100).toFixed(3) + 'vw,0,0)';
       const a = Math.round(p * (n - 1));
       if(!verrou) index = a;
       panneaux.forEach((el, k) => {
         const actif = k === a;
+        const etait = el.dataset.actif === '1';
         el.dataset.actif = actif ? '1' : '0';
+        /* On efface tout de suite en quittant. On ne LANCE rien ici :
         const wash = el.querySelector('[data-svcwash]');
         if(wash) wash.style.opacity = actif ? '1' : '0';
         const chiffre = el.querySelector('[data-svcnum]');
@@ -381,10 +397,193 @@ export default class PixoveryPage extends React.Component {
         if(prof){
           const pk = Math.max(-1.5, Math.min(1.5, p * (n - 1) - k));
           const abs = Math.min(Math.abs(pk), 1);
-          prof.style.setProperty('--par-x', (pk * 17).toFixed(2) + 'vw');
-          prof.style.setProperty('--par-y', (abs * -3.4).toFixed(2) + 'vh');
-          prof.style.setProperty('--par-s', (1 - abs * 0.20).toFixed(3));
+          let px = pk * 17, py = abs * -3.4, ps = 1 - abs * 0.20;
           const pivot = el.querySelector('[data-floppy]');
+
+          /* --- LE PLONGEON DE LA PREMIERE DISQUETTE ---------------------
+             Les disquettes 2 a 4 arrivent portees par le rail : elles ont
+             deja une entree. La premiere, elle, est simplement LA quand la
+             section prend l'ecran — pk vaut 0 des le depart pour k = 0, donc
+             rien ne l'annonce. On lui fabrique son arrivee.
+
+             Elle tombe du coin HAUT DROIT, traverse en restant haute, puis
+             pique sur son emplacement et s'y range. Pilotee par le SCROLL et
+             non par une timeline : `eIn` est la progression de l'arrivee de
+             la section (0 quand son bord haut est encore un ecran plus bas,
+             1 quand elle se cale). Reculer la renvoie en arriere — c'est ce
+             qui la rend solidaire de la page au lieu de la faire jouer une
+             fois et se taire.
+
+             La courbe ne vient PAS d'un chemin dessine : elle vient du
+             decalage entre deux axes qui n'ont pas la meme courbe. X arrive
+             tot (easeOutBack), Y arrive tard (easeInOut). Sur la meme courbe
+             les deux donneraient une diagonale.
+
+             La culbute est a plat (--floppy-tilt), jamais en rotateY : un
+             rotateY de 180 deg afficherait l'image en miroir, et le visuel
+             de la disquette a une face — le texte de l'etiquette se
+             retournerait en plein vol.
+
+             On n'ajoute AUCUNE couche : tout passe par --par-x/y/s et
+             --floppy-tilt, qui existent deja. La regle d'or du bloc SERVICES
+             tient toujours — une transformation par couche, et rotate()
+             reste avant rotateY() puisqu'on ne change qu'une valeur.
+             --------------------------------------------------------------- */
+          if(k === 0){
+            /* Le vol occupe TOUTE la montee de la section : un ecran
+               entier de defilement, soit environ 670 px de course visible.
+               Une fenetre plus courte donnait un geste expedie.
+
+               Il avait d'abord ete retarde a 42 % par crainte du bord haut
+               de [data-colle], qui coupe net pendant l'approche. Mesure sur
+               160 points de la course : inutile. Au moment ou la disquette
+               est la plus grosse, elle est encore hors champ a DROITE — elle
+               ne teste jamais le bord haut a ce moment-la. */
+            /* DEUX TEMPS. Temps 1 (0 -> DEPART) : elle attend hors champ, a
+               droite, pendant qu'on lit encore le hero. Temps 2 : le vol.
+
+               FENETRE — c'est LE reglage a toucher si le vol te parait
+               expedie. Le vol reste pilote par la molette : chaque cran
+               doit donner une etape VISIBLE, pas avaler la moitie du geste.
+               Lenis fait 420 px par cran ; eIn est etale sur 5 ecrans, donc
+               la fenetre vaut FENETRE * 5 * innerHeight pixels de course.
+               A 0,14 elle valait ~720 px, soit 1,7 cran : deux etapes a
+               peine, dont une hors champ. A 0,25 elle vaut ~1125 px, soit
+               pres de 3 crans — trois etapes franches. Monter FENETRE pour
+               plus de crans, la baisser pour moins.
+
+               Elle n'apparait pas plus tot a l'ecran pour autant : a u = 0
+               la disquette est a +80 vw, largement hors champ a droite.
+               Allonger la fenetre la fait seulement attendre plus
+               longtemps a droite, pas surgir pendant le hero. */
+            /* DEUX TEMPS. Temps 1 : elle attend hors champ a droite,
+               pendant qu'on lit encore le hero. Temps 2 : le vol.
+
+               VITESSE DU VOL — c'est LE seul reglage a toucher. Le vol est
+               pilote par le scroll, donc « plus lent » veut dire « etale
+               sur plus de course ». eIn court sur 5 ecrans, donc la
+               fenetre vaut FENETRE * 5 * innerHeight pixels :
+
+                 0,14  ->  ~673 px   (etait juge trop rapide)
+                 0,24  ->  ~1150 px  (actuel, 1,7x plus lent)
+                 0,34  ->  ~1630 px  (2,4x plus lent)
+
+               Elargir ne risque PAS de la faire rogner : mesure sur 160
+               points de course, au moment ou elle est la plus grosse elle
+               est encore hors champ a DROITE — elle ne teste jamais le
+               bord haut de [data-colle] a cet instant-la. Et elle ne
+               deborde pas non plus sur le hero : a u = 0 elle est a
+               +80 vw, donc elle attend simplement plus longtemps hors
+               ecran. DEPART et FENETRE doivent toujours totaliser 1. */
+            /* NE PAS ELARGIR CETTE FENETRE POUR « RALENTIR ». Essaye a 0,24
+               puis 0,40 : ca ne ralentit pas le vol, ca DEFORME sa
+               trajectoire. La disquette se deplace pendant que la page
+               monte ; etaler le vol sur plus de course change le rapport
+               entre ces deux mouvements, et la courbe vue a l'ecran n'est
+               plus la meme. Rejete a l'oeil par Redha. 0,86 / 0,14 est la
+               valeur d'origine, celle qui donne la bonne courbe. */
+            const DEPART = 0.86, FENETRE = 0.14;
+            const u = Math.max(0, Math.min(1, (eIn - DEPART) / FENETRE));
+            /* X — easeOutBack. Elle traverse vite, depasse la cible d'environ
+               3 vw sur la gauche vers u = 0,65, puis revient. */
+            const t  = u - 1;
+            const eb = 1 + 2.10 * t * t * t + 1.10 * t * t;
+            /* Y — easeInOut, donc l'inverse : elle reste HAUT pendant que X
+               fait sa course, et ne tombe qu'apres. C'est ce decalage entre
+               les deux axes qui fabrique la courbe. Deux axes sur la meme
+               courbe donneraient une diagonale, pas un plongeon. */
+            const ey = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2.2) / 2;
+            /* le rebond de la pose : une demi-sinusoide sur le dernier tiers.
+               Nulle aux deux bouts, donc elle ne peut pas laisser de residu —
+               elle passe 3,4 vh SOUS l'emplacement puis remonte dedans. */
+            const rb = u > 0.62 ? Math.sin(Math.PI * (u - 0.62) / 0.38) : 0;
+
+            /* DEPORT_X — de combien elle part a DROITE de son emplacement.
+               80 vw la mettait tres loin hors champ : on ne voyait jamais
+               le debut du lancer, elle surgissait deja a mi-course. 30 vw
+               la pose au bord droit de l'ecran, visible des le depart. */
+            const DEPORT_X = 80;
+            px += (1 - eb) * DEPORT_X * LANCER;
+            /* Seulement 4 vh de haut, et c'est deliberе : plus elle part
+               haut, plus TOT elle entre dans le champ. Pendant l'approche
+               l'emplacement de l'icone est sous la ligne de flottaison, donc
+               une disquette placee au-dessus de lui est tiree dans l'ecran
+               par le haut. C'est ce qui la faisait apparaitre pendant le
+               hero. Le mouvement vertical est donc rendu au ZOOM : c'est lui
+               qui porte la profondeur, pas le plongeon. */
+            /* DEPORT_Y — de combien elle part AU-DESSUS de son emplacement.
+               C'est LE reglage du « lancer depuis la landing ».
+
+               Il valait -4 vh, c'est-a-dire quasiment a plat : la disquette
+               arrivait par le cote et non d'en haut. Le commentaire d'alors
+               s'en justifiait — plus elle part haut, plus tot elle entre
+               dans le champ, et elle risque d'apparaitre pendant le hero.
+               Sauf que c'est precisement l'effet VOULU : elle doit se jeter
+               depuis la landing.
+
+               Attention a l'echelle : la disquette est ancree DANS la
+               section Services, qui est encore ~1,5 ecran plus bas quand le
+               vol commence. Son emplacement est donc lui-meme hors champ
+               par le bas. Il faut un deport de l'ordre de la CENTAINE de vh
+               pour la faire apparaitre en haut de l'ecran — pas quelques
+               dizaines. C'est contre-intuitif mais c'est arithmetique.
+
+               Monte-le si elle part encore trop bas, baisse-le si elle
+               plonge de trop loin. Le 2,6 * rb est le rebond de la pose,
+               il ne bouge pas. */
+            /* IL Y A UN PLAFOND, et il n'est pas esthetique : la landing est
+               peinte PAR-DESSUS Services. Des que la disquette monte plus
+               haut que la frontiere entre les deux sections, elle passe
+               dessous et se fait trancher net a l'horizontale. A 110 vh
+               c'est exactement ce qui arrivait — on voyait une demi
+               disquette. Tant qu'elle reste sous cette frontiere, aucun
+               probleme d'empilement a regler.
+               Le lancer part donc du BORD DROIT a mi-hauteur, pas du ciel. */
+            /* 18 vh, et c'est une valeur MESUREE, pas un gout. Avec le zoom
+               a 2,0 la disquette occupe plus de place au-dessus de son
+               emplacement : la marge au point le plus haut a ete remesuree
+               a 108 px sous le bord de [data-colle]. Aucune coupure.
+               Monter ce chiffre la fait rogner par le cadre ; le baisser
+               (il avait ete ramene a 4) la fait arriver a plat, par le
+               cote, et tue le plongeon. */
+            const DEPORT_Y = 18;
+            py += (-DEPORT_Y * (1 - ey) + 2.6 * rb) * LANCER;
+            /* le zoom : elle entre a ~1,25x, elle est deja passee a 1,5x hors
+               champ. Elle vient VERS nous puis se range. Le creux a 0,98 au
+               moment du depassement est le contrecoup de l'impact. */
+            /* L'echelle a sa PROPRE courbe, et surtout pas celle de X.
+               Avec l'easeOutBack elle passait SOUS sa taille de rangement
+               (312 px pour 365 au repos) avant de regrossir : on lisait un
+               deuxieme rebond, pas un eloignement. Ici la courbe est
+               monotone — elle ne fait que retrecir.
+
+               Et c'est une ease-IN : elle reste grosse LONGTEMPS, puis
+               recule vite. C'est ce qui laisse le temps de la voir au
+               premier plan avant qu'elle ne se range. Avec une ease-out
+               elle avait deja fini de reculer quand elle entrait dans le
+               champ, et tout l'effet de profondeur se jouait hors ecran. */
+            /* GROSSEUR — de combien elle est plus grande au depart qu'a
+               l'arrivee. A 1,80 (soit 2,8x) elle depassait largement de
+               l'ecran au lancer : on ne voyait qu'un morceau de disquette
+               coupe par le bord, pas un objet lance. A 0,55 elle fait 1,55x
+               sa taille de rangement — assez pour lire la profondeur,
+               assez peu pour tenir ENTIERE dans le champ. */
+            /* ZOOM 2,0 — elle entre dans le cadre a environ 1,8x (580 px de
+               large contre 320 au repos) et se reduit jusqu'a sa taille de
+               rangement. C'est CA qui se lit comme de la profondeur : le
+               zoom porte le premier plan, pas le deplacement vertical.
+               Il avait ete pousse a 1,80 (soit 2,8x) : a cette taille la
+               disquette deborde du cadre et se fait rogner. */
+            const GROSSEUR = 1.0;
+            const es = Math.pow(u, 1.9);
+            ps *= 1 + GROSSEUR * (1 - es) * LANCER;
+            if(pivot) pivot.style.setProperty('--floppy-tilt',
+              (-8 - (1 - eb) * 330 * LANCER).toFixed(2) + 'deg');
+          }
+
+          prof.style.setProperty('--par-x', px.toFixed(2) + 'vw');
+          prof.style.setProperty('--par-y', py.toFixed(2) + 'vh');
+          prof.style.setProperty('--par-s', ps.toFixed(3));
           if(pivot) pivot.style.setProperty('--floppy-rot', (pk * -46).toFixed(2) + 'deg');
         }
       });
@@ -720,7 +919,12 @@ export default class PixoveryPage extends React.Component {
       this.on(svc, 'mouseleave', () => {
         wash.style.opacity = '0'; num.style.color = 'rgba(255,255,255,.30)';
         h3.style.transform = 'none'; p.style.color = 'rgba(255,255,255,.45)';
-        if(img) img.style.opacity = '.55';
+        /* La disquette reste PLEINE en quittant le panneau. Elle etait
+           rendue a 55 % : elle n'etait franche qu'au survol, et pendant son
+           vol d'entree — ou personne ne survole — elle traversait l'ecran a
+           moitie transparente. Le reste du panneau garde son attenuation,
+           c'est lui qui porte le survol. */
+        if(img) img.style.opacity = '1';
       });
       /* Parallaxe a la souris. L'ecoute est sur le panneau entier, pas sur
          la vignette : la disquette reagit des qu'on bouge quelque part
@@ -1263,6 +1467,23 @@ export default class PixoveryPage extends React.Component {
       const cue = this.q('[data-cue]');
       if(cue) cue.style.opacity = '1';
     };
+
+    /* --- L'INTRO NE SE JOUE QUE SI ON ARRIVE PAR LE HAUT ---------------
+       Au rechargement, le navigateur restitue la position de defilement.
+       Si on rouvre le site sur Services ou sur Contact, la sequence d'entree
+       n'a aucun sens : plus bas elle fait `window.scrollTo(0, 0)` et un
+       `lenis.stop()`, donc elle rembobine la page en haut et impose son
+       ecran noir alors qu'on voulait revenir ou on etait.
+       On pose donc le hero dans son etat final et on sort avant d'avoir
+       construit la moindre timeline. Le seuil est volontairement bas :
+       quelques pixels de restitution suffisent a dire « on n'arrive pas
+       par le haut ». */
+    const yInitial = window.scrollY || document.documentElement.scrollTop || 0;
+    if(yInitial > 4){
+      open();
+      if(intro) intro.style.display = 'none';
+      return;
+    }
 
     const lines = this.qa('[data-ln]');
     const para  = this.q('[data-heroline="p"]');
@@ -1876,7 +2097,7 @@ export default class PixoveryPage extends React.Component {
                 <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(6*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>01</span>
                 <h3 data-svch="1" style={{position: "relative", zIndex: "1", margin: "0", fontWeight: "700", fontSize: "calc(38*var(--tu))", lineHeight: "1.04", color: "#fff", letterSpacing: "calc(-.6*var(--u))", gridColumn: "1", margin: "0 0 calc(18*var(--u))", transition: "transform .55s cubic-bezier(.16,1,.3,1)"}}>Identité visuelle &amp; logo</h3>
                 <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong>Je crée des identités visuelles qui rendent les marques immédiatement reconnaissables.</strong> Je conçois votre logo et l’ensemble de votre univers graphique : palette de couleurs, typographies, éléments graphiques et direction artistique. Chaque détail est pensé pour créer une identité cohérente, distinctive et facilement déclinable sur vos supports de communication.</p>
-                <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "0s"}}><span data-floppy="1" style={{animationDelay: "0s"}}><img src="/assets/floppy/floppy-identite-visuelle.webp" alt="" style={{opacity: ".55", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
+                <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "0s"}}><span data-floppy="1" style={{animationDelay: "0s"}}><img src="/assets/floppy/floppy-identite-visuelle.webp" alt="" style={{opacity: "1", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
               </article>
               <article data-svc="1" data-panneau="1" style={{flex: "0 0 100vw", width: "100vw", height: "100vh", position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(240*var(--u))", gridAutoRows: "min-content", alignContent: "center", alignItems: "center", columnGap: "calc(50*var(--u))", padding: "calc(150*var(--u)) calc((100vw - 1024*var(--u))/2 + 82*var(--u)) calc(120*var(--u))", boxSizing: "border-box"}}>
                 <i data-svcwash="1" style={{position: "absolute", left: "0", right: "0", top: "0", bottom: "0", zIndex: "0", background: "radial-gradient(ellipse calc(300*var(--u)) calc(330*var(--u)) at calc(50% + 315*var(--u)) calc(50% + 15*var(--u)), rgba(143,43,255,.26) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.045) 62%, rgba(0,0,0,0) 100%)", opacity: "0", transition: "opacity 1s ease"}}></i>
@@ -1884,14 +2105,14 @@ export default class PixoveryPage extends React.Component {
                 <h3 data-svch="1" style={{position: "relative", zIndex: "1", margin: "0", fontWeight: "700", fontSize: "calc(38*var(--tu))", lineHeight: "1.04", color: "#fff", letterSpacing: "calc(-.6*var(--u))", gridColumn: "1", margin: "0 0 calc(18*var(--u))", transition: "transform .55s cubic-bezier(.16,1,.3,1)"}}>Design graphique &amp; print</h3>
                 <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong data-start="568" data-end="654">Je conçois des supports graphiques qui donnent du caractère à votre communication.</strong><br data-start="654" data-end="657" />
       Affiches, flyers, packaging, cartes de visite ou contenus pour les réseaux sociaux : chaque création est pensée pour attirer l’attention et rester cohérente avec votre identité.</p>
-                <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "-2.4s"}}><span data-floppy="1" style={{animationDelay: "-.35s"}}><img src="/assets/floppy/floppy-print.webp" alt="" style={{opacity: ".55", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
+                <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "-2.4s"}}><span data-floppy="1" style={{animationDelay: "-.35s"}}><img src="/assets/floppy/floppy-print.webp" alt="" style={{opacity: "1", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
               </article>
               <article data-svc="1" data-panneau="1" style={{flex: "0 0 100vw", width: "100vw", height: "100vh", position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(240*var(--u))", gridAutoRows: "min-content", alignContent: "center", alignItems: "center", columnGap: "calc(50*var(--u))", padding: "calc(150*var(--u)) calc((100vw - 1024*var(--u))/2 + 82*var(--u)) calc(120*var(--u))", boxSizing: "border-box"}}>
                 <i data-svcwash="1" style={{position: "absolute", left: "0", right: "0", top: "0", bottom: "0", zIndex: "0", background: "radial-gradient(ellipse calc(300*var(--u)) calc(330*var(--u)) at calc(50% + 315*var(--u)) calc(50% + 15*var(--u)), rgba(143,43,255,.26) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.045) 62%, rgba(0,0,0,0) 100%)", opacity: "0", transition: "opacity 1s ease"}}></i>
                 <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(6*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>03</span>
                 <h3 data-svch="1" style={{position: "relative", zIndex: "1", margin: "0", fontWeight: "700", fontSize: "calc(38*var(--tu))", lineHeight: "1.04", color: "#fff", letterSpacing: "calc(-.6*var(--u))", gridColumn: "1", margin: "0 0 calc(18*var(--u))", transition: "transform .55s cubic-bezier(.16,1,.3,1)"}}>Web design</h3>
                 <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong data-start="856" data-end="929">Je conçois des sites web qui donnent envie de découvrir votre marque.&nbsp;</strong>Site vitrine, ou interface sur mesure : je travaille le design, l’expérience utilisateur et la structure de chaque page pour créer une expérience claire, fluide et mémorable.</p>
-                <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "-4.8s"}}><span data-floppy="1" style={{animationDelay: "-.7s"}}><img src="/assets/floppy/floppy-web.webp" alt="" style={{opacity: ".55", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
+                <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "-4.8s"}}><span data-floppy="1" style={{animationDelay: "-.7s"}}><img src="/assets/floppy/floppy-web.webp" alt="" style={{opacity: "1", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
               </article>
               <article data-svc="1" data-panneau="1" style={{flex: "0 0 100vw", width: "100vw", height: "100vh", position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(240*var(--u))", gridAutoRows: "min-content", alignContent: "center", alignItems: "center", columnGap: "calc(50*var(--u))", padding: "calc(150*var(--u)) calc((100vw - 1024*var(--u))/2 + 82*var(--u)) calc(120*var(--u))", boxSizing: "border-box"}}>
                 <i data-svcwash="1" style={{position: "absolute", left: "0", right: "0", top: "0", bottom: "0", zIndex: "0", background: "radial-gradient(ellipse calc(300*var(--u)) calc(330*var(--u)) at calc(50% + 315*var(--u)) calc(50% + 15*var(--u)), rgba(143,43,255,.26) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.045) 62%, rgba(0,0,0,0) 100%)", opacity: "0", transition: "opacity 1s ease"}}></i>
@@ -1899,7 +2120,7 @@ export default class PixoveryPage extends React.Component {
                 <h3 data-svch="1" style={{position: "relative", zIndex: "1", margin: "0", fontWeight: "700", fontSize: "calc(38*var(--tu))", lineHeight: "1.04", color: "#fff", letterSpacing: "calc(-.6*var(--u))", gridColumn: "1", margin: "0 0 calc(18*var(--u))", transition: "transform .55s cubic-bezier(.16,1,.3,1)"}}>Illustration</h3>
                 <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong data-start="1143" data-end="1242">Je crée des illustrations sur mesure pour donner une personnalité unique à votre communication.</strong><br data-start="1242" data-end="1245" />
       Personnages, visuels de marque, illustrations éditoriales ou univers graphiques : je dessine des images adaptées à votre projet, plutôt que de vous proposer des visuels génériques.<br /></p>
-                <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "-7.2s"}}><span data-floppy="1" style={{animationDelay: "-1.05s"}}><img src="/assets/floppy/floppy-illustration.webp" alt="" style={{opacity: ".55", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
+                <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "-7.2s"}}><span data-floppy="1" style={{animationDelay: "-1.05s"}}><img src="/assets/floppy/floppy-illustration.webp" alt="" style={{opacity: "1", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
               </article>
             </div>
             <div data-svcjauge="1" style={{position: "absolute", left: "0", right: "0", bottom: "calc(56*var(--u))", zIndex: "3", width: "calc(1024*var(--u))", margin: "0 auto", padding: "0 calc(82*var(--u))", display: "flex", alignItems: "center", gap: "calc(18*var(--u))"}}>
@@ -2177,7 +2398,7 @@ export default class PixoveryPage extends React.Component {
               <li data-step="1" style={{position: "relative", display: "grid", gridTemplateColumns: "calc(76*var(--u)) minmax(0,1fr)", columnGap: "calc(40*var(--u))", alignItems: "start", padding: "calc(30*var(--u)) 0"}}>
                 <span data-stepnum="1" style={{width: "calc(76*var(--u))", height: "calc(76*var(--u))", borderRadius: "50%", border: "1px solid var(--pink)", background: "var(--dark)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "calc(24*var(--tu))", color: "#fff", transition: "background .5s ease,color .5s ease,transform .5s cubic-bezier(.16,1,.3,1)"}}>01</span>
                 <div style={{paddingTop: "calc(12*var(--u))", maxWidth: "calc(330*var(--u))"}}>
-                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(24*var(--tu))", lineHeight: "1.1", color: "#fff"}}>On se parle</h3>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(24*var(--tu))", lineHeight: "1.1", color: "#fff"}}>Parlons de votre projet</h3>
                   <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.45)"}}>Vous me présentez votre projet, vos idées et vos envies, même lorsqu’elles sont encore floues. Je vous pose les bonnes questions pour comprendre ce que vous voulez vraiment créer.</p>
                 </div>
               </li>
