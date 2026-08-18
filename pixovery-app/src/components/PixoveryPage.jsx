@@ -1,0 +1,2308 @@
+import React from 'react'
+import { gsap } from 'gsap'
+import Lenis from 'lenis'
+
+/* =============================================================================
+   Pixovery — page complete.
+
+   Migration du composant <x-dc> vers React/Vite. La logique ci-dessous est
+   reprise VERBATIM de index.html (lignes 697-1349) : memes 14 methodes, memes
+   selecteurs, memes constantes. Seuls 3 points ont change :
+
+     1. `class Component extends DCLogic`  ->  `extends React.Component`
+     2. `renderVals()` supprime : ses 3 valeurs (rootRef, onSubmit, setVideoRef)
+        sont devenues des proprietes d'instance, liees dans le constructeur.
+     3. `render()` ajoute : le markup de <x-dc> converti en JSX.
+
+   Le markup conserve les 335 styles en ligne, les 217 attributs data-*, les
+   28 aria-*, le systeme d'echelle calc(N*var(--u)) et les 20 proprietes
+   personnalisees --dx / --dy. Aucune valeur n'a ete modifiee.
+   Seuls les chemins d'assets sont passes de "assets/..." a "/assets/...".
+
+   NE PAS refactoriser ce fichier tant que la fidelite visuelle n'est pas
+   definitivement validee.
+   ========================================================================== */
+
+export default class PixoveryPage extends React.Component {
+  constructor(props){
+    super(props);
+    this.rootRef = React.createRef();
+    this.cleanups = [];
+
+    // --- remplace renderVals() du runtime dc ---
+    this.handleSubmit = (e) => this.submit(e);
+    this.setVideoRef = (el) => {
+      if (!el) return;
+      el.muted = true;
+      el.defaultMuted = true;
+      el.loop = true;
+      const p = el.play();
+      if (p && p.catch) p.catch(() => {});
+    };
+  }
+
+  /* Position du halo [data-bulb], mesuree sur chacune des deux images du
+     hero. L'ampoule n'est pas au meme endroit selon que le bras est
+     baisse (hero-cut-a, au repos) ou leve (hero-cut-b, au survol). */
+  q(sel){ return this.rootRef.current ? this.rootRef.current.querySelector(sel) : null; }
+  qa(sel){ return this.rootRef.current ? Array.prototype.slice.call(this.rootRef.current.querySelectorAll(sel)) : []; }
+  on(t, ev, fn, opt){ t.addEventListener(ev, fn, opt); this.cleanups.push(() => t.removeEventListener(ev, fn, opt)); }
+
+  /* ---------------------------------------------------------------------
+     Defilement doux (Lenis).
+
+     Lenis etait deja dans package.json (^1.3.26) mais n'etait importe
+     nulle part : le scroll etait donc reste natif. C'est ici qu'on pose
+     le cable.
+
+     Pourquoi ce branchement est peu risque : Lenis en mode fenetre ecrit
+     une VRAIE position de scroll (window.scrollTo a chaque frame). Donc
+     window.scrollY reste juste et les six ecouteurs 'scroll' deja en
+     place (header, services, reveals, parallax, rhythm) continuent de
+     fonctionner sans etre touches. On n'a pas eu a les reecrire.
+
+     Trois precautions, par ordre d'importance :
+
+     1. Il ne prend PAS la main quand « reduire les animations » est
+        actif, sauf ?motion=full — meme regle que intro() et spin(). On
+        degrade vers le scroll natif, on ne coupe rien.
+     2. Un seul rAF pour tout le site : c'est le ticker de GSAP qui
+        pilote Lenis (autoRaf reste a false). Deux boucles concurrentes
+        se decalent d'une frame et la parallaxe du hero se met a nager.
+     3. La section Services garde son defilement par crans. virtualScroll
+        rend la main a Lenis des que la section tient l'ecran : Lenis
+        ressort AVANT son preventDefault, donc son ecouteur 'wheel' a
+        lui travaille exactement comme avant, et quand il rend la main
+        aux extremites (index 0 / n-1) le scroll natif reprend. On
+        n'utilise volontairement PAS lenis.stop() ici : stop() continue
+        de faire preventDefault sur la molette, on resterait coince dans
+        la section.
+     --------------------------------------------------------------------- */
+  smoothScroll(){
+    const force   = /[?&]motion=full/.test(window.location.search);
+    const reduced = !force && window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if(reduced) return;                     // scroll natif, franc, assume
+
+    const lenis = new Lenis({
+      /* duree du rattrapage apres un cran de molette. 1.05 s : assez
+         long pour le glisse continu, assez court pour que la page
+         s'arrete quand on lache. Au-dela de ~1.4 s ca devient mou et on
+         a l'impression de ne plus tenir le scroll.
+         (Reglage alternatif si le rendu parait trop « telecommande » :
+         retirer duration+easing et passer lerp: 0.075 — Lenis donne la
+         priorite a duration+easing quand les deux sont fournis.) */
+      /* LE piege de cette machine. Par defaut Lenis honore lui-meme
+         prefers-reduced-motion : il force lerp a 1, jette duration et
+         easing, et le scroll redevient exactement natif — tout en
+         posant quand meme les classes .lenis sur <html>. On croit donc
+         qu'il tourne, et il ne lisse rien. « Reduire les animations »
+         etant actif sous Windows sur cette machine, c'est ce qui se
+         passait ici.
+         On lui coupe cet arbitrage parce qu'on l'a deja fait
+         nous-memes, plus haut : sans ?motion=full et avec
+         reduced-motion, on ne construit meme pas d'instance et le
+         scroll reste natif. Quand on arrive ici, la decision est prise.
+         Ne remets pas cette option a true en pensant bien faire. */
+      respectReducedMotion: false,
+      /* Duree du rattrapage apres un cran de molette.
+
+         Mesure au banc (un cran = deltaY 300, viewport 1280x800), lue en
+         distance parcourue / duree totale / frames de traine apres 90 %
+         du trajet. La traine, c'est ce qu'on percoit comme « la glisse » :
+
+           d=1.05 w=1.1   330 px   1.03 s   39   <- premier reglage
+           d=1.40 w=1.4   420 px   1.38 s   54   <- ici
+           d=1.70 w=1.6   480 px   1.62 s   68   <- commence a echapper
+           lerp 0.055     450 px   2.08 s   82   <- autre caractere
+
+         1.40 s est la limite haute utile : au-dela, la page ne s'arrete
+         plus franchement quand on lache et on perd la sensation de la
+         tenir. Pour ALLER PLUS LOIN, ne monte pas la duree — change de
+         caractere : retire duration ET easing, mets lerp: 0.055.
+         L'amortissement par frame n'a pas de fin fixe, la glisse devient
+         continue au lieu d'etre une course chronometree. (Lenis donne la
+         priorite a duration+easing quand les deux sont fournis : il faut
+         vraiment retirer les deux lignes, pas seulement ajouter lerp.) */
+      duration: 1.40,
+      /* easeOutExpo : depart franc, donc le geste repond tout de suite,
+         puis une fin tres etalee — c'est de la que vient la glisse. */
+      easing: t => (t === 1 ? 1 : 1 - Math.pow(2, -10 * t)),
+      /* Distance parcourue par cran, donc le poids de la page : 1.4 donne
+         420 px la ou 1.1 en donnait 330. Monter ce chiffre sans monter la
+         duree rend le scroll rapide et sec, pas fluide — les deux vont
+         ensemble. */
+      wheelMultiplier: 1.4,
+      smoothWheel: true,
+      /* le tactile garde le defilement natif : interpoler sous le doigt
+         fabrique une latence percue, et la section Services a deja ses
+         propres ecouteurs touchstart/touchmove */
+      syncTouch: false,
+      /* les ancres passent par le handler maison de header(), qui
+         decale la cible de la hauteur d'en-tete */
+      anchors: false,
+      /* Main rendue a la section Services — mais seulement quand elle va
+         VRAIMENT consommer le geste. false = Lenis ressort avant d'avoir
+         consomme ET avant son preventDefault : ni lissage, ni blocage.
+         La condition est la meme que celle de l'ecouteur 'wheel' de
+         services() : elle tient l'ecran ET on n'est pas a une extremite.
+         Aux extremites la section rend deja la main ; en laissant Lenis
+         reprendre des cet evenement-la, la sortie de section est un
+         glisse et non un saut sec. svcConsomme est posee par services(),
+         qui tourne apres nous dans componentDidMount. */
+      virtualScroll: d => !(this.svcConsomme && this.svcConsomme(d.deltaY)),
+      /* c'est GSAP qui bat la mesure, voir juste en dessous */
+      autoRaf: false
+    });
+    this.lenis = lenis;
+
+    /* Un seul battement pour les deux moteurs. lagSmoothing(0) : sans
+       ca, apres un a-coup GSAP « rattrape » le temps perdu alors que
+       Lenis, lui, ne rattrape pas — les deux repartent decales. */
+    const tick = time => lenis.raf(time * 1000);
+    gsap.ticker.add(tick);
+    gsap.ticker.lagSmoothing(0);
+
+    this.cleanups.push(() => {
+      gsap.ticker.remove(tick);
+      gsap.ticker.lagSmoothing(500, 33);    // valeurs par defaut de GSAP
+      lenis.destroy();
+      this.lenis = null;
+    });
+  }
+
+  componentDidMount(){
+    /* en premier : les methodes suivantes testent this.lenis */
+    this.smoothScroll();
+    this.applyProps();
+    this.scale();
+    this.on(window, 'resize', () => this.scale());
+    this.header();
+    this.hovers();
+    this.gallery();
+    this.reveals();
+    this.intro();
+    this.parallax();
+    this.rhythmSetup();
+    this.spin();
+    this.services();
+    this.mediaGuard();
+  }
+
+  /* Le tour du Processus. 72 poses a 5 degres, reparties sur deux
+     planches webp de 36 cases (576 px). On dessine la pose la plus
+     proche : PAS de fondu croise entre deux poses, ca fabriquait un
+     fantome au lieu d'un mouvement. Entree et sortie en fondu pour que
+     la figurine ne soit ni posee la avant qu'on arrive, ni coupee net
+     au bord de la section. */
+  spin(){
+    const cv = this.q('[data-spin]'), tour = this.q('[data-tour]');
+    const sec = this.q('#processus');
+    if(!cv || !tour || !sec) return;
+    const cx = cv.getContext('2d');
+    if(!cx) return;
+
+    const N = 72, COLS = 6, T = 576, PER = 36;
+    const sheets = [new Image(), new Image()];
+    let vue = -1, prets = 0, rate = false;
+
+    /* meme regle que intro() : ?motion=full force la version pleine */
+    const force  = /[?&]motion=full/.test(window.location.search);
+    const reduce = !force && window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const draw = f => {
+      const i = reduce ? Math.round(f / 3) * 3 : Math.round(f);
+      if(i === vue || !sheets[0].naturalWidth) return;
+      vue = i;
+      const k = (i / PER) | 0, j = i % PER;
+      cx.clearRect(0, 0, T, T);
+      cx.drawImage(sheets[k], (j % COLS) * T, ((j / COLS) | 0) * T, T, T, 0, 0, T, T);
+    };
+
+    let file = false;
+    const cadence = () => {
+      file = false;
+      const r = sec.getBoundingClientRect(), vh = window.innerHeight;
+      const span = vh * 0.25 + r.height;
+      const p = Math.max(0, Math.min(1, (vh * 0.85 - r.top) / span));
+      draw(p * (N - 1));
+      /* Fondu a l'entree uniquement. Il y avait aussi une sortie — la
+         figurine s'effacait sur les 16 derniers pourcents de la section —
+         mais elle disparaissait alors qu'on la regardait encore. Le bord
+         de section ne la coupe pas : etant collante, elle remonte et sort
+         du champ d'elle-meme, comme n'importe quel contenu. */
+      const ent = Math.min(1, p / 0.10);
+      const f = ent, d = f * f * (3 - 2 * f);
+      tour.style.opacity = d.toFixed(3);
+      tour.style.transform = reduce ? 'none'
+        : 'translateY(' + ((1 - d) * 26).toFixed(1) + 'px) scale(' + (0.955 + 0.045 * d).toFixed(4) + ')';
+    };
+    const queue = () => { if(file) return; file = true; requestAnimationFrame(cadence); };
+
+    const pret = () => {
+      if(++prets < sheets.length) return;
+      if(rate){ tour.style.display = 'none'; return; }
+      draw(0); cadence();
+      this.on(window, 'scroll', queue, {passive: true});
+      this.on(window, 'resize', queue);
+    };
+    sheets.forEach((im, k) => {
+      im.onload = pret;
+      im.onerror = () => { rate = true; pret(); };
+      im.src = '/assets/spin-' + 'ef'[k] + '.webp';
+    });
+  }
+
+
+  /* Services en panneaux horizontaux. Le scroll vertical fait defiler les
+     quatre services de cote, et chacun se cale. Quatre ecrans, pas onze :
+     le parcours reste court. */
+  /* Services : un cran de molette = un service. Pas un defilement
+     continu qu'on recale apres coup — un vrai passage de page. Tant que
+     la section tient l'ecran, on prend la main sur la molette et on
+     avance d'un panneau par geste. Aux deux extremites on rend la main :
+     la page repart normalement vers le haut ou vers Portfolio. */
+  services(){
+    const sec = this.q('[data-piste="services"]');
+    const rail = this.q('[data-svcrail]');
+    if(!sec || !rail) return;
+    const panneaux = this.qa('[data-panneau]');
+    const n = panneaux.length;
+    if(n < 2) return;
+    const num = this.q('[data-svcn]'), barre = this.q('[data-svcbarre]');
+
+    const haut = () => sec.getBoundingClientRect().top + window.scrollY;
+    const course = () => Math.max(1, sec.offsetHeight - window.innerHeight);
+    const posDe = i => haut() + course() * i / (n - 1);
+    /* la section tient-elle l'ecran ? */
+    const tenue = () => {
+      const r = sec.getBoundingClientRect();
+      return r.top <= 2 && r.bottom >= window.innerHeight - 2;
+    };
+    /* Lue a chaque evenement par le virtualScroll de smoothScroll().
+       Tant qu'elle renvoie true, Lenis ne touche ni a la molette ni au
+       defilement, et toute la mecanique par crans ci-dessous travaille
+       exactement comme avant Lenis. La condition est volontairement la
+       MEME que celle de l'ecouteur 'wheel' plus bas (ligne « on rend la
+       main a la page ») : aux extremites on renvoie false, donc Lenis
+       reprend des cet evenement-la et la sortie de section glisse au
+       lieu de sauter. Si tu touches a l'une des deux conditions,
+       touche a l'autre. */
+    this.svcConsomme = dy => {
+      if(!tenue()) return false;
+      const dir = dy > 0 ? 1 : -1;
+      if((dir > 0 && index >= n - 1) || (dir < 0 && index <= 0)) return false;
+      return true;
+    };
+    this.cleanups.push(() => { this.svcConsomme = null; });
+
+    /* Le rythme de la section, en un seul endroit.
+       DUREE   : le passage lui-meme. Court, sinon on attend.
+       REPOS   : court silence apres une arrivee, juste de quoi eviter qu'un
+                 meme elan compte deux fois. Surtout PAS un delai pendant
+                 lequel on ignore la molette : le temps d'arret sur le 01 ne
+                 vient pas de la sourdine, il vient du fait qu'on avale le
+                 geste qui t'a fait entrer dans la section — son elan ne
+                 traverse plus, mais un vrai nouveau geste passe tout de
+                 suite, des le premier cran.
+       SEUIL   : quantite de molette a fournir pour valider un cran. Une
+                 souris envoie ~100 par cran, donc un cran = un service. Un
+                 pave tactile envoie des dizaines de petits deltas : il faut
+                 un vrai geste, pas un frolement.
+       PAUSE   : au-dela de ce silence, c'est un nouveau geste. */
+    const DUREE = 640, REPOS = 90, SEUIL = 46, PAUSE = 180;
+    /* Duree du passage quand c'est Lenis qui bouge la page. Plus longue
+       que DUREE : maintenant que tout le site glisse sur ~1 s, un
+       passage de service en 640 ms tranchait — il paraissait sec par
+       contraste alors qu'il ne l'etait pas avant. C'est le reglage a
+       toucher si le passage te parait trop lent ou trop mou. */
+    const DUREE_L = 900;
+
+    let index = 0, verrou = false, file = false, garde = null, repos = 0;
+    /* Instant ou la section vient de prendre l'ecran. On s'en sert pour
+       laisser le premier service se montrer avant d'accepter un geste. */
+    let entree = 0, etaitTenue = false, dernierY = 0;
+
+    /* le rail suit la position de scroll : pendant le glissement doux, il
+       se deplace avec, donc le passage reste fluide au lieu de sauter */
+    const cadence = () => {
+      file = false;
+      const r = sec.getBoundingClientRect();
+      const t0 = tenue();
+      if(t0 && !etaitTenue){
+        /* On vient d'entrer. preventDefault n'annule PAS un defilement deja
+           lance : sans arret franc, l'elan traverse la section et le premier
+           service ne se pose jamais. On coupe donc net, et on se cadre sur
+           le service d'entree — le premier si on descend, le dernier si on
+           remonte depuis Portfolio. */
+        entree = (window.performance && performance.now) ? performance.now() : Date.now();
+        index = (window.scrollY >= dernierY) ? 0 : n - 1;
+        verrou = true;
+        /* Lenis peut etre en plein rattrapage du geste qui vient de nous
+           amener ici : un window.scrollTo brut serait ecrase a la frame
+           suivante par SA cible a lui, et on repartirait en arriere.
+           immediate + force recalent la valeur ET la cible d'un coup. */
+        const yEntree = Math.round(posDe(index));
+        if(this.lenis) this.lenis.scrollTo(yEntree, {immediate: true, force: true});
+        else window.scrollTo({top: yEntree, behavior: 'auto'});
+        /* Le geste qui vient de nous amener ici est consomme : son elan ne
+           traversera pas la section. Il se reouvrira tout seul apres PAUSE
+           de silence, donc un nouveau coup de molette repond aussitot. */
+        avale = true; cumul = 0;
+        clearInterval(garde);
+        setTimeout(() => { verrou = false; queue(); }, 60);
+      }
+      etaitTenue = t0;
+      dernierY = window.scrollY;
+      const p = Math.max(0, Math.min(1, -r.top / course()));
+      rail.style.transform = 'translate3d(' + (-p * (n - 1) * 100).toFixed(3) + 'vw,0,0)';
+      const a = Math.round(p * (n - 1));
+      if(!verrou) index = a;
+      panneaux.forEach((el, k) => {
+        const actif = k === a;
+        el.dataset.actif = actif ? '1' : '0';
+        const wash = el.querySelector('[data-svcwash]');
+        if(wash) wash.style.opacity = actif ? '1' : '0';
+        const chiffre = el.querySelector('[data-svcnum]');
+        if(chiffre) chiffre.style.webkitTextStrokeColor = actif ? 'rgba(236,0,112,.42)' : 'rgba(255,255,255,.14)';
+        const ico = el.querySelector('[data-svcico] img');
+        if(ico) ico.style.opacity = actif ? '1' : '.55';
+        /* Parallaxe des disquettes. pk vaut 0 quand le panneau est cale au
+           centre, -1 quand il attend a droite, +1 quand il est sorti a
+           gauche. Le rail deplace le panneau de -pk*100vw ; on redonne
+           +pk*17vw a la disquette pour qu'elle avance moins vite que le
+           texte — c'est ce decalage qui fait la profondeur. La rotation
+           suit le meme signal : la disquette se tourne vers nous en
+           arrivant, comme un objet pose dans l'espace devant lequel on
+           passerait. Valeurs bornees, sinon les panneaux lointains
+           partent trop loin. */
+        const prof = el.querySelector('[data-floppydepth]');
+        if(prof){
+          const pk = Math.max(-1.5, Math.min(1.5, p * (n - 1) - k));
+          const abs = Math.min(Math.abs(pk), 1);
+          prof.style.setProperty('--par-x', (pk * 17).toFixed(2) + 'vw');
+          prof.style.setProperty('--par-y', (abs * -3.4).toFixed(2) + 'vh');
+          prof.style.setProperty('--par-s', (1 - abs * 0.20).toFixed(3));
+          const pivot = el.querySelector('[data-floppy]');
+          if(pivot) pivot.style.setProperty('--floppy-rot', (pk * -46).toFixed(2) + 'deg');
+        }
+      });
+      if(num) num.textContent = String(a + 1).padStart(2, '0');
+      /* jauge continue : elle glisse avec le scroll au lieu de sauter d'un
+         quart a chaque cran. */
+      if(barre) barre.style.left = (Math.max(0, Math.min(1, p)) * (n - 1) / n * 100).toFixed(2) + '%';
+    };
+    const queue = () => { if(file) return; file = true; requestAnimationFrame(cadence); };
+
+    /* Le verrou tombe quand on est arrive, pas sur un minuteur : c'est ce
+       qui faisait derailler le passage 3 -> 2, le verrou s'ouvrait en plein
+       vol et index se recalculait depuis une position intermediaire. Avec
+       le tween maison ci-dessous la question ne se pose plus — c'est nous
+       qui bougeons, on sait exactement quand c'est fini.
+
+       Glissement maison, en remplacement de scrollTo({behavior:'smooth'}).
+       Le natif a trois defauts ici. Sa duree ne se regle pas. Sa courbe
+       non plus. Et surtout il est neutralise quand « reduire les
+       animations » est actif : le passage redevient un saut sec, et un
+       saut ne laisse aucune image intermediaire — donc plus aucune
+       parallaxe, plus aucun mouvement a voir. On tween nous-memes :
+       duree fixe, courbe choisie, et cadence() rappele a chaque frame
+       pour que le rail, les disquettes et la jauge suivent le meme
+       signal. La surveillance par setInterval disparait avec : on sait
+       exactement quand on est arrive, puisque c'est nous qui bougeons. */
+    let glisse = null;
+    const arreteGlisse = () => { if(glisse !== null){ cancelAnimationFrame(glisse); glisse = null; } };
+    this.cleanups.push(() => { arreteGlisse(); clearInterval(garde); });
+
+    const vers = i => {
+      index = Math.max(0, Math.min(n - 1, i));
+      arreteGlisse();
+      clearInterval(garde);
+      const depart = window.scrollY;
+      const cible = Math.round(posDe(index));
+      const delta = cible - depart;
+      if(Math.abs(delta) < 2){ verrou = false; queue(); return; }
+      verrou = true;
+      /* easeInOutCubic. Le reste du site utilise cubic-bezier(.16,1,.3,1),
+         mais cette courbe-la place 80 % du trajet dans le premier quart :
+         parfait pour une apparition, mauvais pour un passage de page — la
+         parallaxe defilerait trop vite pour etre lue. Ici on veut du temps
+         au milieu du mouvement. */
+      const courbe = t => (t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+      /* Quand Lenis est la, c'est LUI qui bouge la page. On ne superpose
+         plus un window.scrollTo frame par frame : Lenis resynchronise sa
+         propre cible sur chaque scroll natif, donc les deux moteurs se
+         corrigeaient mutuellement soixante fois par seconde et ca se
+         voyait sur le rail. En passant par lui, le passage d'un service
+         a l'autre a exactement la meme matiere que le reste du site.
+         La courbe ne change pas, seule la duree s'allonge (DUREE_L).
+         lock:true tient le geste pendant le vol — c'est l'ancien role du
+         verrou, sauf que Lenis l'applique aussi a sa propre entree. */
+      if(this.lenis){
+        this.lenis.scrollTo(cible, {
+          duration: DUREE_L / 1000,
+          easing: courbe,
+          force: true,
+          lock: true,
+          onComplete: () => {
+            glisse = null;
+            verrou = false;
+            repos = (window.performance && performance.now) ? performance.now() : Date.now();
+            queue();
+          }
+        });
+        return;
+      }
+
+      /* Repli sans Lenis (reduced-motion sans ?motion=full) : le tween
+         maison d'origine, inchange. */
+      const duree = DUREE;
+      const t0g = (window.performance && performance.now) ? performance.now() : Date.now();
+      const frame = () => {
+        const now = (window.performance && performance.now) ? performance.now() : Date.now();
+        const t = Math.min(1, (now - t0g) / duree);
+        const e = courbe(t);
+        /* 'instant' et pas 'auto' : par prudence. global.css ne pose plus
+           html{scroll-behavior:smooth} (retire en branchant Lenis), mais
+           si quelqu'un le remet, 'auto' s'y soumettrait et relancerait un
+           glissement natif par-dessus le notre a chaque frame — le
+           mouvement redeviendrait caoutchouteux et n'arriverait jamais. */
+        window.scrollTo({top: Math.round(depart + delta * e), behavior: 'instant'});
+        cadence();
+        if(t < 1){ glisse = requestAnimationFrame(frame); }
+        else { glisse = null; verrou = false; repos = now; }
+      };
+      glisse = requestAnimationFrame(frame);
+    };
+
+    /* renvoie true si on a consomme le geste */
+    const pas = dir => {
+      if(!tenue()) return false;
+      const tp = (window.performance && performance.now) ? performance.now() : Date.now();
+      if((dir > 0 && index >= n - 1) || (dir < 0 && index <= 0)) return false; // on rend la main
+      if(verrou) return true;   // geste avale pendant le glissement
+      if(tp - repos < REPOS) return true;   // il vient de se poser, on le laisse respirer
+      vers(index + dir);
+      return true;
+    };
+
+    /* Une souris envoie un evenement par cran. Un pave tactile en envoie
+       des dizaines, avec de l'inertie qui court encore une seconde apres
+       que le doigt a quitte la surface — c'est elle qui faisait doubler le
+       01. On ne compte donc plus les evenements, on compte la matiere : il
+       faut avoir fourni SEUIL de molette pour valider un cran. Une fois le
+       cran parti, tout le reste du geste est avale ; il faut PAUSE de
+       silence pour qu'un nouveau geste puisse commencer. L'elan a beau
+       courir, il ne passe plus. */
+    let dernier = 0, cumul = 0, sens = 0, avale = false;
+    this.on(window, 'wheel', e => {
+      if(Math.abs(e.deltaY) < 2) return;
+      const dir = e.deltaY > 0 ? 1 : -1;
+      if(!tenue()){ cumul = 0; avale = false; return; }
+      if((dir > 0 && index >= n - 1) || (dir < 0 && index <= 0)){
+        dernier = 0; cumul = 0; avale = false;   // on sort : le prochain geste repart propre
+        return;                                  // et on rend la main a la page
+      }
+      e.preventDefault();
+      const t = (window.performance && performance.now) ? performance.now() : Date.now();
+      if(t - dernier > PAUSE){ avale = false; cumul = 0; }   // le geste precedent est fini
+      dernier = t;
+      if(avale) return;                     // la suite du geste, et son inertie
+      if(dir !== sens){ cumul = 0; sens = dir; }   // demi-tour : on repart de zero
+      if(verrou) return;
+      if(t - repos < REPOS) return;         // anti-doublon d'un meme elan
+      cumul += Math.abs(e.deltaY);
+      if(cumul < SEUIL) return;
+      cumul = 0; avale = true;
+      vers(index + dir);
+    }, {passive: false});
+
+    let y0 = null;
+    this.on(window, 'touchstart', e => { y0 = e.touches[0].clientY; }, {passive: true});
+    this.on(window, 'touchmove', e => {
+      if(y0 === null) return;
+      const dy = y0 - e.touches[0].clientY;
+      if(Math.abs(dy) < 28) return;
+      if(pas(dy > 0 ? 1 : -1)) e.preventDefault();
+      y0 = e.touches[0].clientY;
+    }, {passive: false});
+    this.on(window, 'touchend', () => { y0 = null; }, {passive: true});
+
+    this.on(window, 'keydown', e => {
+      const bas = e.key === 'ArrowDown' || e.key === 'PageDown';
+      const hautK = e.key === 'ArrowUp' || e.key === 'PageUp';
+      if(!bas && !hautK) return;
+      const cible = e.target;
+      if(cible && /^(INPUT|TEXTAREA|SELECT)$/.test(cible.tagName)) return;
+      if(pas(bas ? 1 : -1)) e.preventDefault();
+    });
+
+    this.on(window, 'scroll', queue, {passive: true});
+    this.on(window, 'resize', queue);
+    /* La meme chose, mais branchee sur le tick de Lenis. L'evenement
+       'scroll' natif arrive APRES que Lenis a ecrit la position : passer
+       par queue() renvoie cadence() a la frame SUIVANTE, et le rail
+       horizontal accuse donc une frame de retard sur la page. C'est ce
+       retard qu'on percoit comme un tremblement du rail pendant un
+       passage. L'evenement de Lenis, lui, est emis dans sa propre frame
+       avant peinture : le rail, les disquettes et la jauge bougent sur
+       la meme image que le reste. */
+    if(this.lenis){
+      this.lenis.on('scroll', cadence);
+      this.cleanups.push(() => { if(this.lenis) this.lenis.off('scroll', cadence); });
+    }
+    cadence();
+  }
+
+  mediaGuard(){
+    const r = this.rootRef.current; if(!r) return;
+    this.on(r, 'contextmenu', e => {
+      const t = e.target;
+      if(t && (t.tagName === 'IMG' || t.tagName === 'VIDEO')) e.preventDefault();
+    });
+  }
+  componentDidUpdate(){ this.applyProps(); }
+  componentWillUnmount(){ this.cleanups.forEach(f => f()); }
+
+  applyProps(){
+    const r = this.rootRef.current; if(!r) return;
+    const p = this.props || {};
+    const set = (k, v) => { if(v) r.style.setProperty(k, v); };
+    set('--pink', p.pink ?? '#E2006B');
+    set('--pink-b', p.pink ? p.pink : '#EC0070');
+    set('--violet-b', p.violet ?? '#8F2BFF');
+    set('--violet', p.violet ?? '#7A01FF');
+    const intro = this.q('[data-intro]');
+    if(intro && p.showIntro === false){ intro.style.display = 'none'; }
+  }
+
+  /* échelle maquette : 1 px maquette = --u */
+  scale(){
+    const MOCK = 1024, MAXU = 1440 / MOCK;
+    const w = document.documentElement.clientWidth;
+    const u = Math.min(MAXU, w / MOCK);
+    document.documentElement.style.setProperty('--u', u + 'px');
+    if(this.measure) this.measure();
+  }
+
+  header(){
+    const hdr = this.q('[data-hdr]'), hot = this.q('[data-hotzone]');
+    const hero = this.q('[data-hero]');
+    let hideTimer = null, pinned = false;
+    const IDLE = 1400;
+    const onHome = () => hero && window.scrollY < hero.offsetHeight - 90;
+    const show = () => {
+      hdr.style.transform = 'none'; hdr.style.opacity = '1';
+      clearTimeout(hideTimer);
+      if(pinned || onHome()) return;
+      hideTimer = setTimeout(() => {
+        if(!pinned && !onHome()){ hdr.style.transform = 'translateY(-110%)'; hdr.style.opacity = '0'; }
+      }, IDLE);
+    };
+    this.on(window, 'scroll', () => {
+      const s = window.scrollY > 40;
+      hdr.style.background = s ? 'rgba(0,0,0,.82)' : 'transparent';
+      hdr.style.backdropFilter = s ? 'blur(10px)' : 'none';
+      show();
+    }, {passive:true});
+    show();
+    const pin = v => { pinned = v; show(); };
+    this.on(hdr, 'mouseenter', () => pin(true));
+    this.on(hdr, 'mouseleave', () => pin(false));
+    if(hot){ this.on(hot, 'mouseenter', () => pin(true)); this.on(hot, 'mouseleave', () => pin(false)); }
+
+    /* lien actif au scroll + survol */
+    const links = this.qa('[data-nav] a');
+    const targets = links.map(a => this.q(a.getAttribute('href')) || document.querySelector(a.getAttribute('href')));
+    const paint = (i, on) => {
+      const a = links[i], bar = a.querySelector('i');
+      a.style.color = on ? 'var(--pink-b)' : 'var(--nav)';
+      if(bar){ bar.style.transform = on ? 'scaleX(1)' : 'scaleX(0)'; bar.style.transformOrigin = on ? 'left' : 'right'; }
+    };
+    let activeLink = 0;
+    paint(0, true);
+    links.forEach((a, i) => {
+      this.on(a, 'mouseenter', () => paint(i, true));
+      this.on(a, 'mouseleave', () => paint(i, i === activeLink));
+    });
+    if('IntersectionObserver' in window){
+      const obs = new IntersectionObserver(entries => {
+        entries.forEach(en => {
+          if(!en.isIntersecting) return;
+          const i = targets.indexOf(en.target);
+          if(i < 0) return;
+          activeLink = i;
+          links.forEach((_, j) => paint(j, j === i));
+        });
+      }, {rootMargin:'-45% 0px -50% 0px'});
+      targets.forEach(t => { if(t) obs.observe(t); });
+      this.cleanups.push(() => obs.disconnect());
+    }
+
+    /* clic sur un lien interne : on vise la ligne numérotée de la section,
+       pas le haut de la section (qui tombe 110u plus haut à cause du padding) */
+    const HDR = 76, GAP = 18;                       // en px maquette
+    this.qa('a[href^="#"]').forEach(a => {
+      this.on(a, 'click', e => {
+        const href = a.getAttribute('href');
+        if(!href || href === '#') return;
+        const sec = this.q(href);
+        if(!sec) return;
+        e.preventDefault();
+        const mark = sec.querySelector('[data-chapter],[data-galhead]');
+        let top = 0;
+        if(mark){
+          const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--u')) || 1;
+          top = Math.max(0, window.scrollY + mark.getBoundingClientRect().top - (HDR + GAP) * u);
+        }
+        /* global.css ne pose plus scroll-behavior:smooth (il doublait le
+           lissage de Lenis). Quand Lenis est la, c'est lui qui glisse ;
+           sinon on garde le 'smooth' natif comme repli. */
+        if(this.lenis) this.lenis.scrollTo(top, { duration: 1.15, force: true });
+        else window.scrollTo({ top: top, behavior: 'smooth' });
+        try { history.replaceState(null, '', href); } catch(_){}
+      });
+    });
+  }
+
+  hovers(){
+    /* Position du halo [data-bulb], mesuree sur les deux images du hero :
+       l'ampoule n'est pas au meme endroit selon que le bras est baisse
+       (hero-cut-a, repos) ou leve (hero-cut-b, survol). Sans ce recalage,
+       le halo s'allume a cote du personnage dans l'un des deux etats. */
+    const BULB_REPOS  = ['49%', '40%'];
+    const BULB_SURVOL = ['53.3%', '11%'];
+    /* hero : bras levé, ampoule, verres décalés */
+    const hv = this.q('[data-herovisual]');
+    if(hv){
+      const a = hv.querySelector('[data-ch="a"]'), b = hv.querySelector('[data-ch="b"]');
+      const bulb = hv.querySelector('[data-bulb]');
+      const ll = hv.querySelector('[data-lens="l"]'), lr = hv.querySelector('[data-lens="r"]');
+      this.on(hv, 'mouseenter', () => {
+        a.style.opacity = '0'; b.style.opacity = '1'; bulb.style.opacity = '1';
+        /* hero-cut-b : le bras est leve, l'ampoule monte. Le halo suit,
+           sinon il s'allume a cote du personnage. */
+        bulb.style.left = BULB_SURVOL[0]; bulb.style.top = BULB_SURVOL[1];
+        ll.style.left = '64.10%'; ll.style.top = '30.55%';
+        lr.style.left = '71.90%'; lr.style.top = '30.45%';
+      });
+      this.on(hv, 'mouseleave', () => {
+        a.style.opacity = '1'; b.style.opacity = '0'; bulb.style.opacity = '0';
+        bulb.style.left = BULB_REPOS[0];  bulb.style.top = BULB_REPOS[1];
+        ll.style.left = '59.90%'; ll.style.top = '30.80%';
+        lr.style.left = '68.20%'; lr.style.top = '30.80%';
+      });
+    }
+    /* éclat des verres au survol des trois visuels */
+    ['[data-herovisual]','[data-aboutphoto]','[data-contactphoto]'].forEach(sel => {
+      const box = this.q(sel); if(!box) return;
+      this.on(box, 'mouseenter', () => {
+        box.querySelectorAll('[data-streak]').forEach((s, i) => {
+          s.style.animation = 'none';
+          void s.offsetWidth;
+          s.style.animation = 'streak 620ms cubic-bezier(.30,.06,.16,1) ' + (i ? 130 : 70) + 'ms both';
+        });
+      });
+    });
+    /* services */
+    this.qa('[data-svc]').forEach(svc => {
+      const wash = svc.querySelector('[data-svcwash]'), num = svc.querySelector('[data-svcnum]');
+      const h3 = svc.querySelector('[data-svch]'), p = svc.querySelector('[data-svcp]');
+      const ico = svc.querySelector('[data-svcico]'), img = ico && ico.querySelector('img');
+      this.on(svc, 'mouseenter', () => {
+        wash.style.opacity = '1'; num.style.color = 'var(--pink-b)';
+        h3.style.transform = 'translateX(calc(10*var(--u)))';
+        p.style.color = 'rgba(255,255,255,.72)';
+        if(img) img.style.opacity = '1';
+      });
+      this.on(svc, 'mouseleave', () => {
+        wash.style.opacity = '0'; num.style.color = 'rgba(255,255,255,.30)';
+        h3.style.transform = 'none'; p.style.color = 'rgba(255,255,255,.45)';
+        if(img) img.style.opacity = '.55';
+      });
+      /* Parallaxe a la souris. L'ecoute est sur le panneau entier, pas sur
+         la vignette : la disquette reagit des qu'on bouge quelque part
+         dans le service, pas seulement quand on la survole. Deux couches
+         qui ne se marchent pas dessus — la rotation part sur [data-floppy]
+         (elle s'ajoute au pivot de repos et a celui du scroll dans les
+         keyframes), la translation reste sur l'image. */
+      const pivot = svc.querySelector('[data-floppy]');
+      if(img && pivot){
+        /* nx et ny vont de -.5 a +.5 : l'amplitude vue est donc la moitie
+           de ces nombres, de part et d'autre du repos. */
+        const AMP_X = 76, AMP_Y = 46;   // -> +/-38u et +/-23u
+        const ROT   = 42, TILT = 14;    // -> +/-21deg et +/-7deg
+        const suit = (nx, ny, vite) => {
+          const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--u')) || 1;
+          img.style.transitionDuration = vite ? '.12s' : '.65s';
+          img.style.transform = 'translate3d(' + (nx*AMP_X*u).toFixed(2) + 'px,' + (ny*AMP_Y*u).toFixed(2) + 'px,0) scale(' + (vite ? 1.05 : 1) + ')';
+          pivot.style.transitionDuration = vite ? '.12s, .12s, .7s' : '.65s, .65s, .7s';
+          pivot.style.setProperty('--mouse-rot',  (nx*ROT).toFixed(2) + 'deg');
+          pivot.style.setProperty('--mouse-tilt', (-ny*TILT).toFixed(2) + 'deg');
+        };
+        this.on(svc, 'mousemove', e => {
+          const r = svc.getBoundingClientRect();
+          suit((e.clientX - r.left) / r.width - .5, (e.clientY - r.top) / r.height - .5, true);
+        });
+        this.on(svc, 'mouseleave', () => suit(0, 0, false));
+      }
+    });
+    /* processus */
+    this.qa('[data-step]').forEach(step => {
+      const num = step.querySelector('[data-stepnum]');
+      this.on(step, 'mouseenter', () => { num.style.background = 'var(--pink)'; num.style.transform = 'scale(1.06)'; });
+      this.on(step, 'mouseleave', () => { num.style.background = 'var(--dark)'; num.style.transform = 'none'; });
+    });
+    /* galerie */
+    this.qa('[data-piece]').forEach(piece => {
+      const frame = piece.querySelector('[data-pieceframe]'), veil = piece.querySelector('[data-pieceveil]');
+      const media = piece.querySelector('[data-piecemedia]'), num = piece.querySelector('[data-piecenum]');
+      const sweep = piece.querySelector('[data-piecesweep]');
+      const pc = piece.getAttribute('data-piece') === 'pink' ? 'var(--pink-b)' : 'var(--violet-b)';
+      this.on(piece, 'mouseenter', () => {
+        frame.style.transform = 'translateY(calc(-10*var(--u)))';
+        veil.style.opacity = '.4';
+        num.style.webkitTextStrokeColor = pc;
+        sweep.style.opacity = '1'; sweep.style.animation = 'none';
+        void sweep.offsetWidth;
+        sweep.style.animation = 'piece-sweep .9s cubic-bezier(.3,.05,.2,1)';
+      });
+      this.on(piece, 'mouseleave', () => {
+        frame.style.transform = 'none'; veil.style.opacity = '.9';
+        num.style.webkitTextStrokeColor = 'rgba(255,255,255,.16)';
+        sweep.style.opacity = '0';
+      });
+    });
+    /* flèches galerie */
+    this.qa('[data-galprev],[data-galnext]').forEach(btn => {
+      this.on(btn, 'mouseenter', () => { btn.style.borderColor = 'var(--pink)'; btn.style.background = 'var(--pink)'; btn.style.transform = 'translateY(calc(-2*var(--u)))'; });
+      this.on(btn, 'mouseleave', () => { btn.style.borderColor = 'rgba(255,255,255,.18)'; btn.style.background = 'transparent'; btn.style.transform = 'none'; });
+    });
+    /* champs du formulaire */
+    this.qa('[data-form] input,[data-form] textarea').forEach(f => {
+      this.on(f, 'focus', () => { f.style.outline = 'none'; f.style.borderBottomColor = 'var(--pink-b)'; });
+      this.on(f, 'blur', () => { f.style.borderBottomColor = 'rgba(255,255,255,.18)'; });
+      this.on(f, 'input', () => { f.style.borderBottomColor = 'var(--pink-b)'; });
+    });
+    /* boutons magnétiques */
+    if(window.matchMedia('(pointer:fine)').matches){
+      this.qa('[data-magnetic]').forEach(el => {
+        this.on(el, 'mousemove', e => {
+          const r = el.getBoundingClientRect();
+          el.style.setProperty('--mx', ((e.clientX - r.left - r.width/2) * .28).toFixed(1) + 'px');
+          el.style.setProperty('--my', ((e.clientY - r.top - r.height/2) * .38).toFixed(1) + 'px');
+        });
+        this.on(el, 'mouseleave', () => { el.style.setProperty('--mx','0px'); el.style.setProperty('--my','0px'); });
+      });
+    }
+  }
+
+  gallery(){
+    const gal = this.q('[data-gallery]'), track = this.q('[data-galtrack]');
+    if(!gal || !track) return;
+    const ambient = gal.querySelector('[data-ambient]');
+    const idxOut = this.q('[data-galindex]');
+    const prev = this.q('[data-galprev]'), next = this.q('[data-galnext]');
+    const pieces = this.qa('[data-piece]');
+    const rail = this.q('[data-galrail]'), railBar = this.q('[data-galrailbar]');
+    const ACC = {violet:'rgba(143,43,255,.07)', pink:'rgba(236,0,112,.07)'};
+    let maxShift = 0, active = -1, horizontal = true, x = 0;
+
+    const step = () => {
+      const first = pieces[0];
+      if(!first) return 400;
+      const w = first.getBoundingClientRect().width;
+      const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--u')) || 1;
+      return w + 46 * u;
+    };
+    const setX = (v, smooth) => {
+      x = Math.max(0, Math.min(maxShift, v));
+      track.style.transition = smooth ? 'transform .42s cubic-bezier(.22,1,.3,1)' : 'none';
+      track.style.transform = 'translate3d(' + (-x).toFixed(2) + 'px,0,0)';
+      update();
+    };
+
+    /* ------------------------------------------------------------------
+       Amortissement du ruban.
+
+       Avant : chaque geste ecrivait la position directement, donc le
+       ruban collait a l'entree en 1:1 et s'arretait net. Depuis que la
+       page glisse (voir smoothScroll), c'est le seul endroit du site qui
+       repondait encore comme un tiroir.
+
+       Maintenant tout passe par une cible, et une seule fonction la
+       poursuit avec un amortissement exponentiel. Trois consequences :
+       le ruban a une traine, le defilement par les bords demarre et
+       s'arrete en fondu au lieu de s'allumer d'un coup, et l'inertie a
+       exactement le meme caractere que le scroll vertical.
+
+       Le suivi tourne sur `gsap.ticker`, comme Lenis : un seul rAF pour
+       tout le site (regle inscrite dans CLAUDE.md). L'ancienne boucle
+       autoTick a disparu avec.
+       ------------------------------------------------------------------ */
+    let cible = 0, suit = null, vel = 0;
+    /* Amortissement doux seulement si on anime deja le reste. En
+       reduced-motion sans ?motion=full, this.lenis est null : la cible
+       est appliquee telle quelle et le ruban repond en 1:1 comme avant.
+       Degrader, pas couper. */
+    const doux = () => !!this.lenis;
+    /* LAMBDA en unites par seconde, pas par frame : le rendu est le meme
+       a 60 et a 144 Hz. 9 donne environ un tiers de seconde de traine —
+       assez pour qu'on la voie, assez peu pour que le ruban ne flotte
+       pas derriere le curseur pendant un glissement aux bords. */
+    const LAMBDA = 9;
+    const borne = v => Math.max(0, Math.min(maxShift, v));
+
+    const suivre = (time, deltaTime) => {
+      if(!horizontal || dragging){ arreteSuivi(); return; }
+      /* onglet en arriere-plan ou frame sautee : un dt geant ferait
+         teleporter le ruban. On plafonne a 4 frames. */
+      const dt = Math.min(deltaTime || 16, 64) / 1000;
+      if(vel !== 0) cible = borne(cible + vel);
+      const d = cible - x;
+      if(vel === 0 && Math.abs(d) < 0.3){
+        if(d !== 0) setX(cible, false);
+        arreteSuivi();
+        return;
+      }
+      setX(doux() ? cible - d * Math.exp(-LAMBDA * dt) : cible, false);
+    };
+    const arreteSuivi = () => { if(suit){ gsap.ticker.remove(suit); suit = null; } };
+    const lanceSuivi = () => { if(!suit){ suit = suivre; gsap.ticker.add(suit); } };
+    this.cleanups.push(arreteSuivi);
+
+    /* mouvement continu : molette, defilement par les bords */
+    const glisseVers = v => { cible = borne(v); lanceSuivi(); };
+    /* saut choisi : fleches, recalage apres un glisser. Sans Lenis on
+       garde la transition CSS d'origine plutot qu'un saut sec. */
+    const porteVers = v => {
+      cible = borne(v);
+      if(doux()) lanceSuivi();
+      else setX(cible, true);
+    };
+    /* position imposee : glisser en cours, redimensionnement. La cible
+       suit la main, sinon le suivi ramenerait le ruban en arriere des
+       que le doigt s'arrete. */
+    const poseX = v => { arreteSuivi(); setX(v, false); cible = x; };
+
+    const update = () => {
+      if(!horizontal) return;
+      const p = maxShift > 0 ? x / maxShift : 0;
+      if(rail && railBar){
+        const visible = Math.min(1, track.clientWidth / Math.max(1, track.scrollWidth));
+        railBar.style.transform = 'none';
+        railBar.style.width = (visible * 100).toFixed(2) + '%';
+        railBar.style.left = (p * (100 - visible * 100)).toFixed(2) + '%';
+      }
+      const vw = window.innerWidth;
+      pieces.forEach(el => {
+        const r = el.getBoundingClientRect();
+        const c = (r.left + r.width/2) / vw - .5;
+        const m = el.querySelector('[data-piecemedia]');
+        if(m) m.style.setProperty('--mp', (-c * 26).toFixed(1) + 'px');
+      });
+      const i = Math.min(pieces.length - 1, Math.round(p * (pieces.length - 1)));
+      if(i !== active){
+        active = i;
+        if(idxOut) idxOut.textContent = String(i + 1).padStart(2, '0');
+        const kind = pieces[i].getAttribute('data-piece') === 'pink' ? 'pink' : 'violet';
+        if(ambient) ambient.style.setProperty('--accent', ACC[kind]);
+        if(prev){ prev.disabled = i === 0; prev.style.opacity = i === 0 ? '.25' : '1'; prev.style.pointerEvents = i === 0 ? 'none' : 'auto'; }
+        if(next){ const last = i === pieces.length - 1; next.disabled = last; next.style.opacity = last ? '.25' : '1'; next.style.pointerEvents = last ? 'none' : 'auto'; }
+      }
+    };
+    const shell = track.parentElement;
+    const head = this.q('[data-galhead]');
+    const meta = head && head.children[2];
+    /* pile verticale sous 1000px : le ruban n'a plus de sens au doigt */
+    const setStacked = on => {
+      if(on){
+        shell.style.padding = 'calc(56*var(--u)) 0 calc(60*var(--u))';
+        track.style.transform = 'none';
+        track.style.flexDirection = 'column';
+        track.style.alignItems = 'stretch';
+        track.style.gap = 'calc(44*var(--u))';
+        track.style.cursor = 'auto';
+        if(meta) meta.style.display = 'none';
+        if(rail) rail.style.display = 'none';
+        pieces.forEach(p => { p.style.width = 'auto'; });
+      } else {
+        shell.style.padding = 'calc(110*var(--u)) 0 calc(120*var(--u))';
+        track.style.flexDirection = 'row';
+        track.style.alignItems = 'center';
+        track.style.gap = 'calc(46*var(--u))';
+        track.style.cursor = 'grab';
+        if(meta) meta.style.display = 'flex';
+        if(rail) rail.style.display = 'block';
+        pieces.forEach(p => { p.style.width = 'calc(360*var(--u))'; });
+      }
+    };
+    this.measure = () => {
+      horizontal = document.documentElement.clientWidth > 1000;
+      setStacked(!horizontal);
+      gal.style.height = '';
+      if(!horizontal) return;
+      /* la gouttière droite (82u) tombe du scrollWidth d'un flex row : on la
+         recalcule depuis la dernière carte pour la conserver à l'arrivée */
+      const last = pieces[pieces.length - 1];
+      const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--u')) || 1;
+      const end = last ? last.offsetLeft + last.offsetWidth + 82 * u : track.scrollWidth;
+      /* la largeur de référence est celle du conteneur qui clippe, pas du ruban */
+      maxShift = Math.max(0, end - shell.clientWidth);
+      poseX(Math.min(x, maxShift));
+    };
+    const goTo = i => {
+      i = Math.max(0, Math.min(pieces.length - 1, i));
+      porteVers(i * step());
+    };
+    const curIndex = () => { const s = step(); return s > 0 ? Math.round(x / s) : 0; };
+    if(prev) this.on(prev, 'click', () => goTo(curIndex() - 1));
+    if(next) this.on(next, 'click', () => goTo(curIndex() + 1));
+
+    /* glisser-déposer à la souris */
+    let dragging = false, startX = 0, startPos = 0, moved = 0, captured = false;
+    this.on(track, 'pointerdown', e => {
+      if(!horizontal) return;
+      dragging = true; moved = 0; captured = false;
+      startX = e.clientX; startPos = x;
+    });
+    this.on(track, 'pointermove', e => {
+      if(!dragging) return;
+      const d = e.clientX - startX;
+      moved = Math.abs(d);
+      /* On ne capture le pointeur qu'a partir d'un vrai glissement.
+         Capturer des le pointerdown redirige le click suivant vers le ruban
+         au lieu du visuel clique : le plein ecran ne s'ouvrait jamais. */
+      if(!captured && moved > 4){
+        captured = true;
+        track.style.cursor = 'grabbing';
+        try { track.setPointerCapture(e.pointerId); } catch(_){}
+      }
+      if(!captured) return;
+      poseX(startPos - d);
+    });
+    const endDrag = () => {
+      if(!dragging) return;
+      const wasDrag = captured;
+      dragging = false; captured = false;
+      track.style.cursor = 'grab';
+      /* pas de recalage si l'utilisateur a simplement clique */
+      if(wasDrag) porteVers(Math.round(x / step()) * step());
+    };
+    this.on(track, 'pointerup', endDrag);
+    this.on(track, 'pointercancel', endDrag);
+    this.on(window, 'pointerup', endDrag);
+    /* un clic accidentel après un vrai glissement ne suit pas le lien */
+    this.on(track, 'click', e => { if(moved > 6){ e.preventDefault(); e.stopPropagation(); } }, true);
+
+    /* plein écran au clic sur un visuel */
+    const lb = this.q('[data-lightbox]'), lbBox = this.q('[data-lbbox]'), lbImg = this.q('[data-lbimg]');
+    const lbT = this.q('[data-lbtitle]'), lbM = this.q('[data-lbmeta]');
+    /* bascule "taille reelle" : par defaut le visuel remplit l'ecran sans
+       jamais depasser sa taille naturelle ; un clic dessus passe au 1:1 et
+       rend le fond defilable pour parcourir l'image. */
+    let zoomed = false;
+    /* Les contraintes de taille sont posees en style inline dans le markup :
+       il faut memoriser leurs valeurs d'origine, car les remettre a '' les
+       supprimerait au lieu de les restaurer (le visuel resterait alors en
+       taille naturelle en permanence). */
+    const lbDef = (lbImg && lbBox) ? {
+      iw: lbImg.style.maxWidth, ih: lbImg.style.maxHeight, w: lbImg.style.width,
+      bw: lbBox.style.maxWidth, ai: lb.style.alignItems, ov: lb.style.overflow
+    } : null;
+    const setZoom = (on) => {
+      if(!lbImg || !lbBox || !lbDef) return;
+      zoomed = on;
+      if(on){
+        lbBox.style.maxWidth = 'none';
+        lbImg.style.maxWidth = 'none'; lbImg.style.maxHeight = 'none';
+        lbImg.style.width = lbImg.naturalWidth + 'px';
+        lbImg.style.cursor = 'zoom-out';
+        lb.style.alignItems = 'flex-start'; lb.style.overflow = 'auto';
+      } else {
+        lbBox.style.maxWidth = lbDef.bw;
+        lbImg.style.maxWidth = lbDef.iw; lbImg.style.maxHeight = lbDef.ih; lbImg.style.width = lbDef.w;
+        lbImg.style.cursor = 'zoom-in';
+        lb.style.alignItems = lbDef.ai; lb.style.overflow = lbDef.ov;
+        lb.scrollTop = 0; lb.scrollLeft = 0;
+      }
+    };
+    const closeLb = () => {
+      if(!lb) return;
+      setZoom(false);
+      lb.style.opacity = '0'; lb.style.visibility = 'hidden'; lb.setAttribute('aria-hidden', 'true');
+      if(lbBox) lbBox.style.transform = 'scale(.94) translateY(calc(16*var(--u)))';
+      document.body.style.overflow = '';
+    };
+    if(lbImg) this.on(lbImg, 'click', e => { e.stopPropagation(); setZoom(!zoomed); });
+    const openLb = piece => {
+      if(!lb || !lbImg) return;
+      const m = piece.querySelector('[data-piecemedia]'); if(!m) return;
+      setZoom(false);
+      lbImg.src = m.currentSrc || m.src; lbImg.alt = m.alt || '';
+      const h = piece.querySelector('h3'), tag = piece.querySelector('span[style*="uppercase"]');
+      if(lbT) lbT.textContent = h ? h.textContent : '';
+      if(lbM) lbM.textContent = tag ? tag.textContent : '';
+      lb.style.visibility = 'visible'; lb.setAttribute('aria-hidden', 'false');
+      requestAnimationFrame(() => {
+        lb.style.opacity = '1';
+        if(lbBox) lbBox.style.transform = 'scale(1) translateY(0)';
+      });
+      document.body.style.overflow = 'hidden';
+    };
+    pieces.forEach(p => {
+      const frame = p.querySelector('[data-pieceframe]');
+      if(!frame) return;
+      frame.style.cursor = 'zoom-in';
+      this.on(frame, 'click', e => { if(moved > 6) return; e.preventDefault(); openLb(p); });
+    });
+    if(lb) this.on(lb, 'click', e => { if(!lbBox || !lbBox.contains(e.target)) closeLb(); });
+    const lbc = this.q('[data-lbclose]');
+    if(lbc) this.on(lbc, 'click', closeLb);
+    this.on(window, 'keydown', e => { if(e.key === 'Escape') closeLb(); });
+
+    /* défilement automatique : la souris vers un bord entraîne le ruban.
+       La vitesse suit la distance au bord — on ralentit en revenant au centre. */
+    /* `vel` et la boucle vivent maintenant dans le suivi amorti declare
+       plus haut : c'est lui qui ajoute `vel` a la cible a chaque frame.
+       On ne fait plus que regler la vitesse ici. Effet de bord voulu :
+       l'entrainement demarre et s'arrete en fondu au lieu de s'allumer
+       et se couper net quand on franchit le seuil. */
+    const autoStart = () => { if(vel !== 0) lanceSuivi(); };
+    this.on(shell, 'mousemove', e => {
+      if(!horizontal || dragging){ vel = 0; return; }
+      /* la bande du ruban seule : l'en-tête et ses flèches ne déclenchent rien */
+      const tr = track.getBoundingClientRect();
+      if(e.clientY < tr.top || e.clientY > tr.bottom){ vel = 0; return; }
+      /* la zone visible, pas le ruban : celui-ci est plus large que l'écran */
+      const r = shell.getBoundingClientRect();
+      const p = (e.clientX - r.left) / r.width;
+      const EDGE = .38, MAX = 30;
+      if(p < EDGE) vel = -MAX * ((EDGE - p) / EDGE);
+      else if(p > 1 - EDGE) vel = MAX * ((p - (1 - EDGE)) / EDGE);
+      else vel = 0;
+      autoStart();
+    });
+    /* on coupe la vitesse, pas le suivi : il finit sa traine puis
+       s'arrete tout seul. C'est ce qui remplace l'arret sec d'avant. */
+    this.on(shell, 'mouseleave', () => { vel = 0; });
+
+    /* trackpad : le geste horizontal fait défiler le ruban, le vertical la page */
+    this.on(track, 'wheel', e => {
+      if(!horizontal) return;
+      if(Math.abs(e.deltaX) > Math.abs(e.deltaY)){
+        e.preventDefault();
+        /* on empile sur la CIBLE, pas sur la position rendue : sinon
+           chaque nouvel evenement repartirait d'un ruban encore en
+           mouvement et le geste perdrait de la course. */
+        glisseVers(cible + e.deltaX * 2.2);
+      }
+    }, {passive:false});
+
+    /* défilement tactile natif */
+    this.on(track, 'touchstart', () => {}, {passive:true});
+
+    this.on(window, 'resize', this.measure);
+    this.on(window, 'load', this.measure);
+    this.measure();
+  }
+
+  reveals(){
+    const groups = [
+      ['[data-chapter]', 0], ['[data-galhead]', 0], ['[data-step]', 110], ['[data-reveal]', 90], ['[data-signature]', 300]
+    ];
+    const items = [];
+    groups.forEach(([sel, stagger]) => {
+      this.qa(sel).forEach((el, i) => {
+        const isSig = el.hasAttribute('data-signature');
+        el.style.opacity = '0';
+        el.style.transform = isSig ? 'translateX(calc(-40*var(--u)))' : 'translateY(calc(34*var(--u)))';
+        el.style.transition = isSig ? 'opacity 1s ease, transform 1s cubic-bezier(.22,1,.36,1)' : 'opacity 1.05s ease, transform 1.05s cubic-bezier(.22,1,.36,1)';
+        items.push({el: el, delay: i * stagger, fade: false});
+      });
+    });
+    /* les deux grands visuels : fondu seul (ils portent déjà un transform) */
+    this.qa('[data-floater]').forEach(el => {
+      el.style.opacity = '0';
+      el.style.transition = 'opacity 1.1s ease';
+      items.push({el: el, delay: 0, fade: true});
+    });
+    /* révélation pilotée par le défilement : une fois montré, ça reste montré */
+    let queued = false;
+    const check = () => {
+      queued = false;
+      const vh = window.innerHeight;
+      for(let k = items.length - 1; k >= 0; k--){
+        const it = items[k], b = it.el.getBoundingClientRect();
+        if(b.top < vh * .84 && b.bottom > vh * .04){
+          it.el.style.transitionDelay = it.delay + 'ms';
+          it.el.style.opacity = '1';
+          if(!it.fade) it.el.style.transform = 'none';
+          const rule = it.el.querySelector && it.el.querySelector('[data-rule]');
+          if(rule) rule.style.transform = 'scaleX(1)';
+          items.splice(k, 1);
+        }
+      }
+    };
+    const queueReveal = () => {
+      if(typeof requestAnimationFrame !== 'function'){ check(); return; }
+      if(queued) return;
+      queued = true;
+      requestAnimationFrame(check);
+      /* rAF peut être étranglé (onglet caché, capture) : filet immédiat */
+      setTimeout(() => { if(queued) check(); }, 120);
+    };
+    this.on(window, 'scroll', queueReveal, {passive:true});
+    this.on(window, 'resize', queueReveal);
+    check();
+    /* horloge indépendante : ne dépend ni de rAF ni des événements de scroll,
+       s'arrête d'elle-même quand tout est révélé */
+    const beat = setInterval(() => { check(); if(!items.length) clearInterval(beat); }, 200);
+    this.cleanups.push(() => clearInterval(beat));
+  }
+
+  /* ===========================================================================
+     LE SEUIL — sequence d'entree, orchestree par une timeline GSAP.
+
+     Idee directrice : la barre de chargement est deja un degrade violet->rose,
+     et le sol du hero ([data-floor], [data-ground], [data-spot]) est deja un
+     lavis violet. C'est la meme lumiere. La sequence ne fait donc pas
+     disparaitre un loader pour afficher une page : elle conduit une seule
+     lumiere de la barre vers le sol de la scene.
+
+       CHARGE      les keyframes CSS d'origine (intro-mark, intro-bar) jouent
+                   telles quelles, intactes.
+       SEUIL       le logo se retire vers le haut ; la barre ne s'efface pas,
+                   elle s'etire au-dela de l'ecran en s'eteignant.
+       OUVERTURE   le noir se retire, les lueurs du sol montent de zero et la
+                   figurine avance legerement (--sc 1.06 -> 1).
+       (temps mort ~0,5 s : la scene est eclairee mais encore muette)
+       SCENE       les 3 lignes du titre montent en cascade, puis la ligne de
+                   texte, puis le bouton.
+
+     Contraintes respectees :
+       - aucun element DOM ajoute, aucun asset, aucun texte touche ;
+       - on n'anime QUE des proprietes possedees par personne d'autre :
+         opacity sur [data-herovisual] et sur les 4 lueurs (aucun autre code
+         ne les lit), --sc (ecrit uniquement par heroScroll, et le scroll est
+         bloque pendant la sequence), et les elements du loader ;
+       - [data-bulb] et [data-ch] appartiennent a hovers() : jamais touches ;
+       - [data-plane] : on ne touche pas leur transform, possede par parallax() ;
+       - opacity et transform uniquement, jamais filter/blur (cout GPU) ;
+       - prefers-reduced-motion : la sequence n'est pas coupee, elle est
+         degradee (aucun deplacement, durees divisees par ~3,5).
+
+     L'etat final produit est EXACTEMENT celui de l'ancien open() : le contrat
+     avec le reste du code est inchange.
+     ======================================================================== */
+  /* Decoupe les trois lignes du titre en lettres, une seule fois.
+     Rien n'est touche dans render() : les <i data-ln> et l'<em> de
+     "idees" restent tels quels, on ne fait que remplacer leurs noeuds
+     texte par des <span data-c>. Le titre reste lisible pour les
+     lecteurs d'ecran grace a l'aria-label pose sur le <h1>. */
+  splitTitle(){
+    const lignes = this.qa('[data-ln]');
+    if(!lignes.length) return [];
+    if(lignes[0].querySelector('[data-c]')) return this.qa('[data-ln] [data-c]');
+
+    const h1 = lignes[0].closest('h1');
+    if(h1 && !h1.getAttribute('aria-label'))
+      h1.setAttribute('aria-label', h1.textContent.replace(/\s+/g, ' ').trim());
+
+    const lettres = [];
+    lignes.forEach((ligne, li) => {
+      const w = document.createTreeWalker(ligne, NodeFilter.SHOW_TEXT);
+      const noeuds = []; while(w.nextNode()) noeuds.push(w.currentNode);
+      let k = 0;
+      noeuds.forEach(n => {
+        const frag = document.createDocumentFragment();
+        [...n.textContent].forEach(ch => {
+          if(ch === ' '){ frag.appendChild(document.createTextNode(' ')); return; }
+          const s = document.createElement('span');
+          s.setAttribute('data-c', '1');
+          s.setAttribute('aria-hidden', 'true');
+          s.style.display = 'inline-block';
+          s.style.willChange = 'transform';
+          s.textContent = ch;
+          /* chaque lettre a son ecart et son angle propres : ca se range
+             comme des briques, pas comme une vague reguliere */
+          const r = Math.sin(li * 13 + k * 7.3);
+          s.dataset.dy = (-42 - Math.abs(r) * 58).toFixed(0);
+          s.dataset.dr = (r * 9).toFixed(1);
+          s.dataset.dl = (li * 0.09 + k * 0.032 + Math.abs(r) * 0.05).toFixed(3);
+          frag.appendChild(s); lettres.push(s); k++;
+        });
+        n.replaceWith(frag);
+      });
+    });
+    return lettres;
+  }
+
+  intro(){
+    const intro = this.q('[data-intro]');
+    /* le hero doit pouvoir se ré-ouvrir si le template est re-rendu */
+    this.opened = false;
+    const open = () => {
+      this.opened = true;
+      if(intro){ intro.style.opacity = '0'; intro.style.visibility = 'hidden'; intro.style.pointerEvents = 'none'; }
+      this.qa('[data-ln]').forEach(i => { i.style.transform = 'none'; });
+      /* le titre est decoupe en lettres : le filet de securite doit les
+         reposer elles aussi, sinon il rouvre une ligne vide */
+      this.qa('[data-ln] [data-c]').forEach(c => {
+        c.style.transform = 'none'; c.style.opacity = '1';
+      });
+      this.qa('[data-ln]').forEach(i => {
+        if(i.parentElement && i.parentElement.dataset.ov !== undefined)
+          i.parentElement.style.overflow = i.parentElement.dataset.ov;
+      });
+      const p = this.q('[data-heroline="p"]'), btn = this.q('[data-heroline="btn"]');
+      if(p){ p.style.opacity = '1'; p.style.transform = 'none'; }
+      if(btn){ btn.style.opacity = '1'; btn.style.transform = 'translate(var(--mx,0px),var(--my,0px))'; }
+      const cue = this.q('[data-cue]');
+      if(cue) cue.style.opacity = '1';
+    };
+
+    const lines = this.qa('[data-ln]');
+    const para  = this.q('[data-heroline="p"]');
+    const btn   = this.q('[data-heroline="btn"]');
+    const hv    = this.q('[data-herovisual]');
+    const logo  = intro ? intro.querySelector('img') : null;
+    const railW = intro ? intro.querySelectorAll(':scope > div')[1] : null;
+    const bar   = railW ? railW.querySelector('i') : null;
+    const glows = ['[data-floor="1"]', '[data-floor="2"]', '[data-ground]', '[data-spot]']
+      .map(s => this.q(s)).filter(Boolean);
+    /* la jauge de lecture du header : meme degrade que la barre du loader */
+    const hdrRail = this.q('[data-progress]');
+    const hdrBar  = this.q('[data-bar]');
+    /* l'ampoule que tient la figurine : halo radial orange, au repos a 0,
+       pilote au survol par hovers(). C'est la source de lumiere de la scene. */
+    const bulb    = this.q('[data-bulb]');
+
+    /* le loader est masque quand showIntro === false (voir applyProps) */
+    const noLoader = !intro || getComputedStyle(intro).display === 'none';
+    /* ?motion=full force la version pleine, quel que soit le reglage systeme.
+       Sert a travailler la sequence sans toucher aux reglages de Windows.
+       Aucun effet pour un visiteur qui n'ajoute pas ce parametre. */
+    const force    = /[?&]motion=full/.test(window.location.search);
+    const reduced  = !force && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    /* "Mouvement reduit" veut dire eviter les grands deplacements qui donnent
+       le mal des transports, pas tout couper. On garde donc la meme
+       choregraphie, avec des amplitudes divisees par 2,5 et un tempo plus
+       vif. Le visiteur qui a coche ce reglage voit la meme scene, en plus
+       sobre -- pas une page qui s'allume sans rien dire. */
+    const M = reduced ? 0.4 : 1;    /* amplitude des deplacements */
+    const D = reduced ? 0.6 : 1;    /* facteur de duree */
+    const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--u')) || 1;
+
+    /* --- les transitions CSS de ces elements se battraient avec GSAP : on les
+           met en pause, on les restitue telles quelles a la fin --- */
+    /* [data-intro] a `transition: opacity .6s` en ligne : sans le neutraliser,
+       la transition CSS reease chaque image ecrite par GSAP et etale le fondu. */
+    const tw = lines.concat(para ? [para] : [], btn ? [btn] : [], intro ? [intro] : [],
+                            bulb ? [bulb] : []);
+    const savedTr = tw.map(el => el.style.transition);
+    tw.forEach(el => { el.style.transition = 'none'; });
+
+    /* --- GSAP normalise le transform de tout element qu'il anime, meme pour
+           une simple opacity. Or le transform de [data-herovisual] est ecrit
+           avec des var() que GSAP ne sait pas relire :
+             translate(var(--px,0px), calc(-50% + var(--py,0px))) scale(var(--sc,1))
+           S'il le remplace par une matrice, --px / --py / --sc ne pilotent plus
+           rien et la parallaxe meurt. On memorise donc les transform d'origine
+           de tous les elements possedes par parallax() et on les restitue mot
+           pour mot a la fin de la sequence. --- */
+    /* [data-bulb] est centre par translate(-50%,-50%). GSAP resout ces %
+       en pixels des qu'il touche l'element : le centrage se figerait et
+       casserait au redimensionnement. On restitue donc aussi son transform. */
+    const owned = (hv ? [hv] : []).concat(glows, bulb ? [bulb] : []);
+    const savedTf = owned.map(el => el.style.transform);
+
+    const thaw = () => {
+      tw.forEach((el, i) => { el.style.transition = savedTr[i]; });
+      owned.forEach((el, i) => { el.style.transform = savedTf[i]; });
+      if(hv) hv.style.setProperty('--sc', '1');
+      /* etat de repos de l'ampoule : hovers() attend exactement '0' */
+      if(bulb) bulb.style.opacity = '0';
+    };
+
+    /* --- blocage du scroll sans overflow:hidden, qui ferait sauter la page
+           de la largeur de la barre de defilement au deverrouillage --- */
+    const KEYS = [' ', 'PageDown', 'PageUp', 'ArrowDown', 'ArrowUp', 'Home', 'End'];
+    const stop = (e) => e.preventDefault();
+    const stopKeys = (e) => { if(KEYS.indexOf(e.key) >= 0) e.preventDefault(); };
+    let locked = false;
+    const lock = () => {
+      if(locked) return; locked = true;
+      window.scrollTo(0, 0);
+      /* Ici, contrairement a Services, lenis.stop() est exactement ce
+         qu'on veut : il continue de faire preventDefault sur la molette,
+         donc il verrouille au lieu de rendre la main. On recale d'abord
+         sa cible sur 0, sinon il reprendrait au deverrouillage la
+         descente amorcee avant le rechargement. */
+      if(this.lenis){ this.lenis.scrollTo(0, {immediate:true, force:true}); this.lenis.stop(); }
+      window.addEventListener('wheel', stop, {passive:false});
+      window.addEventListener('touchmove', stop, {passive:false});
+      window.addEventListener('keydown', stopKeys, {passive:false});
+    };
+    const unlock = () => {
+      if(!locked) return; locked = false;
+      if(this.lenis) this.lenis.start();
+      window.removeEventListener('wheel', stop);
+      window.removeEventListener('touchmove', stop);
+      window.removeEventListener('keydown', stopKeys);
+    };
+
+    /* etats de depart : poses tout de suite, sous le rideau noir */
+    if(hv) gsap.set(hv, { opacity: 0 });
+    if(glows.length) gsap.set(glows, { opacity: 0 });
+    lock();
+
+    const tl = gsap.timeline({
+      delay: noLoader ? 0.05 : 1.30,
+      /* PAS de force3D ici. [data-herovisual] a un transform ecrit avec des
+         var() : translate(var(--px), calc(-50% + var(--py))) scale(var(--sc)).
+         force3D obligerait GSAP a reecrire ce transform, il resoudrait les
+         var() en une matrice figee et la parallaxe cesserait de fonctionner.
+         Toutes les animations sur le hero sont donc en opacity pure, et
+         l'echelle passe uniquement par --sc, ecrit a la main. */
+      defaults: { ease: 'power3.out' },
+      onComplete: () => { open(); thaw(); unlock(); },
+    });
+
+    /* --- SEUIL : on reprend la main sur les keyframes CSS en figeant d'abord
+           leur etat final, sinon `animation:none` les remettrait a zero --- */
+    if(!noLoader){
+      if(logo)  tl.set(logo,  { animation: 'none', opacity: 1, y: 0 }, 0);
+      if(bar)   tl.set(bar,   { animation: 'none', scaleX: 1, transformOrigin: 'left center' }, 0);
+      if(railW) tl.set(railW, { transformOrigin: 'center center' }, 0);
+    }
+    tl.addLabel('seuil', 0);
+
+    /* -------------------------------------------------------------------
+       LE FIL DE LUMIERE
+       La barre du loader et la jauge de lecture du header sont exactement le
+       meme degrade : linear-gradient(90deg, var(--violet-b), var(--pink)).
+       Jusqu'ici l'une mourait et l'autre naissait sans lien. Desormais c'est
+       le meme objet : la barre ne s'eteint pas, elle monte se loger dans le
+       header et change de metier. Un seul fil de lumiere du premier au
+       dernier pixel de la visite.
+
+       Contrainte de mise en scene : le loader est en z-index 1000, le header
+       en 100. La barre voyageuse est donc AU-DESSUS du rideau noir, la vraie
+       jauge EN DESSOUS. Plutot que de manipuler les z-index, on fait
+       atterrir la barre pendant que le noir se retire : au point d'arrivee
+       les deux lignes se superposent au pixel pres, l'une s'efface avec le
+       rideau pendant que l'autre se decouvre. L'oeil ne voit qu'une seule
+       ligne continue.
+       ------------------------------------------------------------------- */
+    const viser = () => {
+      const r = railW.getBoundingClientRect();
+      const W = document.documentElement.clientWidth;
+      const pr = hdrRail ? hdrRail.getBoundingClientRect() : null;
+      /* on vise la vraie ligne du header ; si elle est masquee (header
+         retracte), on retombe sur sa position de maquette : 76u de haut. */
+      const ty = (pr && pr.width > 0 && pr.top > -1)
+        ? pr.top + pr.height / 2
+        : 76 * u - 0.5;
+      return {
+        dx: W / 2 - (r.left + r.width / 2),
+        dy: ty - (r.top + r.height / 2),
+        sx: W / r.width,
+      };
+    };
+
+    if(!noLoader){
+      if(logo) tl.to(logo, {
+        y: -14 * u * M, opacity: 0, duration: 0.55 * D, ease: 'power2.in',
+      }, 'seuil');
+
+      if(railW){
+        let AIM = null;
+        /* la jauge est mise a plein AVANT le voyage : elle est encore cachee
+           sous le rideau noir, donc invisible. Elle attend, en place. */
+        tl.call(() => {
+          AIM = viser();
+          if(hdrBar) hdrBar.style.width = '100%';
+          if(hdrRail) hdrRail.style.opacity = '1';
+        }, null, 'seuil');
+
+        tl.to(railW, {
+          x: () => AIM.dx,
+          y: () => AIM.dy,
+          scaleX: () => AIM.sx,
+          duration: 0.62 * D,
+          ease: 'power3.inOut',
+        }, 'seuil+=0.02');
+      }
+      /* mouvement reduit : pas de voyage, le rideau emporte la barre */
+    }
+
+    /* --- LE NOIR : le rideau se retire sur une scene encore eteinte -------
+       On ne decouvre pas un decor deja eclaire, on decouvre le noir. La
+       figurine n'est qu'un fantome a 18% : assez pour qu'on devine une
+       presence, pas assez pour qu'on la voie. Les lueurs du sol restent a 0.
+       ------------------------------------------------------------------ */
+    /* --- L'ALLUMAGE ------------------------------------------------------
+       La piece est noire, l'ampoule est la seule source, et la camera est
+       posee dessus. Puis la lumiere s'ouvre et la camera recule jusqu'au
+       cadrage de la landing : l'intro ne se leve pas comme un rideau, elle
+       devient la page.
+
+       Rien de la landing n'est touche — ni la mise en page, ni les tailles,
+       ni le transform de [data-herovisual], qui appartient a heroScroll et
+       a ses var(). L'effet tient en deux nappes fixes ajoutees
+       ([data-lightveil], [data-lightwarm]) et une camera sur [data-hero],
+       qui n'a aucun transform ecrit par le JS.
+
+       Tout est calcule depuis la position REELLE de [data-bulb] : le centre
+       du halo, l'origine du zoom, et la distance pour amener l'ampoule au
+       centre de l'ecran. Rien n'est devine en pourcentages.
+
+       LUM = le temps que la piece reste noire, en unites D. A 0 (mouvement
+       reduit, ou nappes absentes) toute la sequence disparait proprement et
+       l'intro d'origine reprend a l'identique. */
+    const veil = this.q('[data-lightveil]'), warm = this.q('[data-lightwarm]');
+    const heroCam = this.q('[data-hero]'), RACINE = document.documentElement;
+    const LUM = (veil && warm && bulb && heroCam && !reduced) ? 1.05 : 0;
+
+    tl.addLabel('ouverture', 'seuil+=' + (noLoader ? 0 : 0.25 * D));
+
+    if(!noLoader && intro){
+      tl.to(intro, { opacity: 0, duration: 0.50 * D, ease: 'power2.inOut' }, 'ouverture');
+    }
+    if(hv){
+      /* 0.18 quand il n'y a pas d'allumage : c'est le reglage d'origine.
+         Avec l'allumage, c'est le voile qui fait le noir — la figurine doit
+         rester lisible a l'interieur de la bulle, donc presque pleine. */
+      tl.to(hv, { opacity: LUM ? 0.92 : 0.18, duration: 0.45 * D, force3D: false }, 'ouverture');
+    }
+    /* le fil se range vers la gauche : detail discret, plus le spectacle */
+    if(!noLoader && hdrBar){
+      tl.to(hdrBar, {
+        width: '0%', duration: 0.70 * D, ease: 'power2.inOut',
+      }, 'ouverture+=' + (0.25 * D));
+    }
+
+    /* --- L'ALLUMAGE -------------------------------------------------------
+       Le geste principal. La figurine tient une ampoule ; c'est elle qui
+       allume la scene. Le titre du site dit "Faisons decoller vos idees" :
+       l'ampoule EST l'idee. On la joue au lieu de l'illustrer.
+
+       La lumiere se propage depuis sa source, dans cet ordre : l'ampoule
+       claque, la figurine sort de l'ombre, puis le halo violet gagne le
+       spot, le sol, et enfin les deux nappes du fond. Chaque decalage est
+       court (40 a 80 ms) : on ne voit pas une cascade, on sent une onde.
+
+       Le flash est transitoire, l'eclairage reste -- comme un vrai allumage.
+       [data-bulb] revient donc exactement a 0, son etat de repos, sinon le
+       survol gere par hovers() serait casse.
+       ------------------------------------------------------------------- */
+    tl.addLabel('allumage', 'ouverture+=' + ((0.37 + LUM) * D));
+
+    if(LUM){
+      const rb = bulb.getBoundingClientRect(), rh = heroCam.getBoundingClientRect();
+      const bx = rb.left + rb.width / 2, by = rb.top + rb.height / 2;
+      const z0 = 1 + 0.55 * M;
+      RACINE.style.setProperty('--lum-x', bx.toFixed(1) + 'px');
+      RACINE.style.setProperty('--lum-y', by.toFixed(1) + 'px');
+      /* Sur la racine, pas sur la section : les deux nappes sont ses SOEURS,
+         elles n'heriteraient pas d'une variable posee sur elle — et le halo
+         ne suivrait pas le recul de camera. */
+      RACINE.style.setProperty('--cam-ox', (bx - rh.left).toFixed(1) + 'px');
+      RACINE.style.setProperty('--cam-oy', (by - rh.top).toFixed(1) + 'px');
+
+      const L = { r: 0, rw: 0, z: z0,
+                  dx: window.innerWidth / 2 - bx, dy: window.innerHeight / 2 - by };
+      const ecrire = () => {
+        RACINE.style.setProperty('--lum-r',  L.r.toFixed(1) + 'px');
+        RACINE.style.setProperty('--lum-rw', L.rw.toFixed(1) + 'px');
+        RACINE.style.setProperty('--cam-z', L.z.toFixed(4));
+        RACINE.style.setProperty('--cam-x', L.dx.toFixed(1) + 'px');
+        RACINE.style.setProperty('--cam-y', L.dy.toFixed(1) + 'px');
+      };
+      ecrire();
+      gsap.set([veil, warm], { opacity: 1 });
+      /* Un element agrandi compte dans la zone scrollable : sans ca, la
+         camera ferait apparaitre des barres de defilement le temps de
+         l'intro. `clip` et pas `hidden` : hidden fabrique un conteneur de
+         defilement, et ca casse position:sticky. Retire a la fin. */
+      heroCam.style.overflow = 'clip';
+
+      /* la bulle s'ouvre autour de l'ampoule : on ne voit que la tete */
+      tl.to(L, { r: 180, rw: 250, duration: 0.40 * D, ease: 'power2.out', onUpdate: ecrire },
+        'ouverture+=' + (0.22 * D));
+      tl.to(bulb, { opacity: 0.5, duration: 0.30 * D, ease: 'power2.out', force3D: false },
+        'ouverture+=' + (0.22 * D));
+      /* le decrochage : la piece se resserre juste avant le plein feu.
+         Une ampoule ne passe jamais de faible a fort en ligne droite. */
+      tl.to(L, { r: 150, rw: 196, duration: 0.10 * D, ease: 'power1.in', onUpdate: ecrire },
+        'ouverture+=' + ((0.37 + LUM - 0.12) * D));
+
+      /* plein feu : la lumiere deborde et la camera recule, en meme temps */
+      tl.to(L, { r: 2800, rw: 2600, z: 1, dx: 0, dy: 0,
+        duration: 0.85 * D, ease: 'power3.out', onUpdate: ecrire }, 'allumage');
+      tl.to(warm, { opacity: 0, duration: 0.70 * D, ease: 'power2.in' },
+        'allumage+=' + (0.25 * D));
+      tl.to(veil, { opacity: 0, duration: 0.30 * D, ease: 'none',
+        onComplete: () => { veil.style.display = 'none'; warm.style.display = 'none';
+                            heroCam.style.overflow = ''; } },
+        'allumage+=' + (0.55 * D));
+    }
+
+    if(hv){
+      tl.to(hv, { opacity: 1, duration: 0.30 * D, ease: 'power2.out', force3D: false }, 'allumage');
+      /* profondeur : --sc est la variable que le hero utilise deja pour son
+         echelle. heroScroll() ne la reecrit qu'au scroll, bloque ici. */
+      const depth = { v: 1 + 0.14 * M };
+      tl.to(depth, {
+        v: 1, duration: 1.00 * D, ease: 'power3.out',
+        onStart:    () => hv.style.setProperty('--sc', String(1 + 0.14 * M)),
+        onUpdate:   () => hv.style.setProperty('--sc', depth.v.toFixed(4)),
+        onComplete: () => hv.style.setProperty('--sc', '1'),
+      }, 'allumage');
+    }
+    if(bulb){
+      tl.to(bulb, { opacity: 1, duration: 0.16 * D, ease: 'power2.out', force3D: false },
+        'allumage+=' + (0.06 * D));
+      tl.to(bulb, { opacity: 0, duration: 0.90 * D, ease: 'power2.inOut', force3D: false },
+        'allumage+=' + (0.30 * D));
+    }
+    /* l'onde : spot -> sol -> nappes du fond */
+    const onde = [
+      [this.q('[data-spot]'),      0.10],
+      [this.q('[data-ground]'),    0.14],
+      [this.q('[data-floor="1"]'), 0.18],
+      [this.q('[data-floor="2"]'), 0.18],
+    ];
+    onde.forEach(([el, t]) => {
+      if(el) tl.to(el, { opacity: 1, duration: 0.45 * D, ease: 'power2.out', force3D: false },
+        'allumage+=' + (t * D));
+    });
+
+    /* --- SCENE : apres un temps mort, le titre monte --- */
+    /* Sans allumage on garde le temps mort d'origine. Avec, le titre attend
+       que la lumiere ait fini de s'ouvrir : il arrive sur une page eclairee,
+       pas pendant qu'elle s'eclaire. */
+    tl.addLabel('scene', 'allumage+=' + ((LUM ? 0.88 : 0.48) * D));
+
+    /* --- LE TITRE : les lettres se rangent -------------------------------
+       Le markup de render() n'est pas touche : le decoupage se fait ici,
+       une seule fois, et il preserve l'<em> qui porte le violet de
+       "idees". Chaque lettre arrive de plus ou moins haut avec son propre
+       angle, puis se pose. Le sujet du site est une figurine a assembler :
+       le titre se monte, piece par piece.
+
+       Deux precautions :
+       - les <span> parents ont overflow:hidden pour masquer les lignes ;
+         il couperait les lettres qui arrivent d'au-dessus. On l'ouvre
+         pendant la sequence et on le rend a la fin.
+       - les lignes elles-memes passent a transform:none tout de suite :
+         ce ne sont plus elles qui portent le mouvement. On evite ainsi le
+         piege du yPercent qui s'ajoute au translateY(112%) d'origine. */
+    const lettres = this.splitTitle();
+    if(lettres.length){
+      const masques = lines.map(l => l.parentElement).filter(Boolean);
+      tl.add(() => {
+        lines.forEach(l => { l.style.transform = 'none'; });
+        masques.forEach(m => {
+          if(m.dataset.ov === undefined) m.dataset.ov = m.style.overflow || '';
+          m.style.overflow = 'visible';
+        });
+      }, 'scene');
+      tl.fromTo(lettres,
+        { yPercent: (i, t) => +t.dataset.dy, rotation: (i, t) => +t.dataset.dr,
+          scale: 0.86, opacity: 0, y: 0 },
+        { yPercent: 0, rotation: 0, scale: 1, opacity: 1, y: 0,
+          duration: 0.82 * D, ease: 'back.out(1.35)',
+          delay: (i, t) => +t.dataset.dl * D },
+        'scene');
+      tl.add(() => { masques.forEach(m => { m.style.overflow = m.dataset.ov; }); });
+    } else if(lines.length){
+      /* repli : si le decoupage n'a pas pu se faire, on garde la montee
+         d'origine. y:0 est INDISPENSABLE — GSAP lit le translateY(112%)
+         comme y = 110.25px et l'AJOUTE au yPercent. */
+      tl.fromTo(lines,
+        { yPercent: 112, y: 0 },
+        { yPercent: 0, y: 0, duration: 0.95 * D, stagger: 0.13 * D, ease: 'power4.out' },
+        'scene');
+    }
+    if(para){
+      tl.fromTo(para,
+        { opacity: 0, y: 16 * u * M },
+        { opacity: 1, y: 0, duration: 0.75 * D },
+        'scene+=' + (0.30 * D));
+    }
+    if(btn){
+      tl.fromTo(btn,
+        { opacity: 0, y: 14 * u * M },
+        { opacity: 1, y: 0, duration: 0.75 * D },
+        'scene+=' + (0.44 * D));
+    }
+
+    /* --- filets de securite : la landing doit s'ouvrir quoi qu'il arrive --- */
+    const safety = setTimeout(() => { if(!this.opened) tl.progress(1); }, 6500);
+    const guard = setInterval(() => {
+      const hidden = this.qa('[data-ln]').some(i => i.style.transform === 'translateY(112%)');
+      if(hidden && this.opened) open();
+    }, 300);
+
+    this.cleanups.push(() => {
+      clearInterval(guard); clearTimeout(safety);
+      tl.kill(); unlock(); thaw();
+    });
+  }
+
+  parallax(){
+    const hv = this.q('[data-herovisual]'), copy = this.q('[data-herocopy]'), hero = this.q('[data-hero]');
+    const planes = this.qa('[data-plane]').map(el => ({el: el, k: parseFloat(el.getAttribute('data-k')) || 0}));
+    let mx = 0, my = 0, cx = 0, cy = 0, pending = false, shift = 0;
+    const apply = () => {
+      pending = false;
+      cx += (mx - cx) * .08; cy += (my - cy) * .08;
+      if(hv){ hv.style.setProperty('--px', (cx*18).toFixed(2) + 'px'); hv.style.setProperty('--py', (cy*14).toFixed(2) + 'px'); }
+      planes.forEach(p => { p.el.style.transform = 'translate3d(' + (cx*18*p.k).toFixed(2) + 'px,' + (cy*14*p.k).toFixed(2) + 'px,0)'; });
+      if(copy) copy.style.setProperty('--cpy', (cy*-6 + shift).toFixed(2) + 'px');
+      if(Math.abs(mx-cx) > .001 || Math.abs(my-cy) > .001) queue();
+    };
+    const queue = () => { if(pending) return; pending = true; requestAnimationFrame(apply); };
+    if(window.matchMedia('(pointer:fine)').matches){
+      this.on(window, 'mousemove', e => {
+        mx = (e.clientX / window.innerWidth - .5) * 2;
+        my = (e.clientY / window.innerHeight - .5) * 2;
+        queue();
+      }, {passive:true});
+    }
+    const heroScroll = () => {
+      if(!hero) return;
+      const p = Math.min(1, window.scrollY / window.innerHeight);
+      shift = -p * 90;
+      if(hv){ hv.style.setProperty('--sc', (1 - p*.12).toFixed(3)); }
+      if(copy){ copy.style.setProperty('--cpy', (cy*-6 + shift).toFixed(2) + 'px'); }
+    };
+    this.on(window, 'scroll', heroScroll, {passive:true});
+    heroScroll();
+  }
+
+  rhythmSetup(){
+    const bar = this.q('[data-bar]'), progress = this.q('[data-progress]');
+    const steps = this.q('[data-steps]'), gal = this.q('[data-gallery]');
+    /* `data-floater` marque les deux grands visuels — reveals() s'en sert
+       pour les fondre SANS transform, puisqu'ils en portent deja un. On ne
+       pose donc pas cet attribut sur la colonne de texte : elle serait
+       entree dans ce lot et aurait recu un fondu de bloc en plus du fondu
+       echelonne de ses propres paragraphes. Elle porte `data-par` seul, et
+       la parallaxe accepte les deux marqueurs. */
+    const floaters = Array.from(new Set(this.qa('[data-floater]').concat(this.qa('[data-par]'))));
+    let tick = false;
+    const rhythm = () => {
+      tick = false;
+      const vh = window.innerHeight;
+      if(bar){
+        const doc = document.documentElement.scrollHeight - vh;
+        bar.style.width = (doc > 0 ? (window.scrollY / doc) * 100 : 0).toFixed(2) + '%';
+        if(progress) progress.style.opacity = '1';
+      }
+      if(steps){
+        const r = steps.getBoundingClientRect();
+        const d = (vh*.85 - r.top) / (vh*.45);
+        steps.style.setProperty('--draw', Math.max(0, Math.min(1, d)).toFixed(3));
+      }
+      floaters.forEach(el => {
+        const b = el.getBoundingClientRect();
+        if(b.bottom < -200 || b.top > vh + 200) return;
+        const c = (b.top + b.height/2 - vh/2) / vh;
+        /* Amplitude par element, en px, via data-par. 34 reste la valeur
+           d'origine et donc le defaut : la photo de Contact ne bouge pas.
+           Un nombre NEGATIF inverse le sens — c'est ce qui permet de faire
+           descendre une colonne pendant que l'autre monte. La parallaxe
+           est un ecart, pas un deplacement : deux elements qui vont en
+           sens contraire se lisent bien plus que le double du meme
+           mouvement, et aucun des deux ne quitte sa boite. */
+        const amp = parseFloat(el.dataset.par);
+        /* Arrondi au pixel entier, et pas au dixieme comme avant. Depuis
+           que des colonnes de TEXTE bougent aussi (A propos, formulaire de
+           Contact), une translation sous-pixel fait rendre le texte entre
+           deux pixels : sur certaines cartes graphiques il devient flou
+           pendant tout le defilement. Un pas de 1 px sur 150 px de course
+           ne se voit pas ; du texte flou, si. */
+        el.style.setProperty('--ty', Math.round(c * -(isNaN(amp) ? 34 : amp)) + 'px');
+      });
+    };
+    const queue = () => {
+      if(typeof requestAnimationFrame !== 'function'){ rhythm(); return; }
+      if(tick) return;
+      tick = true;
+      requestAnimationFrame(rhythm);
+      setTimeout(() => { if(tick) rhythm(); }, 120);
+    };
+    this.on(window, 'scroll', queue, {passive:true});
+    this.on(window, 'resize', queue);
+    /* Sur le tick de Lenis, pas seulement sur l'evenement 'scroll' : celui-ci
+       arrive apres l'ecriture de la position, donc queue() renverrait le
+       calcul a la frame suivante. Une frame de retard passait inapercue a
+       34 px d'amplitude ; a 64 px elle se voit, la photo semble tirer sur
+       le texte. Ici les deux bougent sur la meme image. */
+    if(this.lenis){
+      this.lenis.on('scroll', rhythm);
+      this.cleanups.push(() => { if(this.lenis) this.lenis.off('scroll', rhythm); });
+    }
+    rhythm();
+    setTimeout(rhythm, 500);
+  }
+
+  submit(e){
+    e.preventDefault();
+    const form = e.target, f = form.elements, msg = this.q('[data-formmsg]');
+    const bad = [];
+    ['nom','prenom','email','message'].forEach(n => {
+      const el = f[n];
+      const ok = el.value.trim() !== '' && (n !== 'email' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(el.value.trim()));
+      el.style.borderBottomColor = ok ? 'rgba(255,255,255,.18)' : '#FF4D4D';
+      if(!ok) bad.push(el);
+    });
+    if(bad.length){
+      msg.textContent = 'Merci de remplir les champs en rouge.';
+      msg.style.color = '#FF6B6B';
+      bad[0].focus();
+      return;
+    }
+    msg.style.color = 'var(--pink-b)';
+    const sujet = f.sujet.value.trim() || 'Nouveau message depuis pixovery';
+    const body = 'Nom : ' + f.nom.value.trim() + ' ' + f.prenom.value.trim() +
+      '\nEmail : ' + f.email.value.trim() + '\n\n' + f.message.value.trim();
+    window.location.href = 'mailto:' + (this.props.email ?? 'pixovery@gmail.com') +
+      '?subject=' + encodeURIComponent(sujet) + '&body=' + encodeURIComponent(body);
+    msg.textContent = 'Votre messagerie s\u2019ouvre avec le message pré-rempli.';
+  }
+
+  render(){
+    return (
+      <div ref={this.rootRef} style={{background: "#000", position: "relative"}}>
+
+        <div data-intro="1" style={{position: "fixed", inset: "0", zIndex: "1000", background: "#000", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "calc(26*var(--u))", transition: "opacity .6s ease, visibility .6s"}}>
+          <div><img src="/assets/img01.webp" alt="Pixovery" style={{height: "calc(34*var(--u))", width: "auto", opacity: "0", transform: "translateY(calc(14*var(--u)))", animation: "intro-mark .9s cubic-bezier(.16,1,.3,1) .15s forwards"}} width="1106" height="220" decoding="async" /></div>
+          <div style={{width: "calc(150*var(--u))", height: "1px", background: "rgba(255,255,255,.14)", overflow: "hidden"}}><i style={{display: "block", height: "100%", width: "100%", background: "linear-gradient(90deg,var(--violet-b),var(--pink))", transform: "scaleX(0)", transformOrigin: "left", animation: "intro-bar 1.15s cubic-bezier(.65,0,.35,1) .2s forwards"}}></i></div>
+        </div>
+
+        <div aria-hidden="true" style={{position: "fixed", inset: "-50%", zIndex: "900", pointerEvents: "none", opacity: ".055", backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E\")", animation: "grain-shift 8s steps(6) infinite", left: "-788px", top: "-474px"}}></div>
+
+        <div data-hotzone="1" aria-hidden="true" style={{position: "fixed", top: "0", left: "0", right: "0", height: "calc(70*var(--u))", zIndex: "99"}}></div>
+        <header data-hdr="1" style={{position: "fixed", top: "0", left: "0", right: "0", zIndex: "100", height: "calc(76*var(--u))", display: "flex", alignItems: "center", transform: "translateY(-110%)", opacity: "0", transition: "transform .35s cubic-bezier(.22,1,.36,1), opacity .3s ease, background .3s ease, backdrop-filter .3s ease"}}>
+          <div data-progress="1" aria-hidden="true" style={{position: "absolute", left: "0", right: "0", bottom: "0", height: "1px", background: "rgba(255,255,255,.07)", transition: "opacity .4s ease"}}><i data-bar="1" style={{display: "block", height: "100%", width: "0", background: "linear-gradient(90deg,var(--violet-b),var(--pink))"}}></i></div>
+          <div style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative", display: "grid", alignItems: "center", gridTemplateColumns: "1fr auto 1fr", boxSizing: "border-box", paddingLeft: "calc(82*var(--u))", paddingRight: "calc(82*var(--u))"}}>
+            <span style={{display: "block", lineHeight: "0"}}><img src="/assets/logo-pixovery.webp" alt="Pixovery" style={{display: "block", height: "calc(22*var(--u))", width: "auto"}} width="1106" height="220" decoding="async" /></span>
+            <nav data-nav="1" style={{display: "flex", alignItems: "center", justifyContent: "center", gap: "calc(22*var(--u))"}}>
+              <a href="#accueil" style={{position: "relative", fontSize: "calc(9.5*var(--tu))", fontWeight: "500", letterSpacing: "calc(1.1*var(--u))", textTransform: "uppercase", color: "var(--nav)", transition: "color .25s ease"}}>Accueil<i style={{position: "absolute", left: "0", right: "0", bottom: "calc(-6*var(--u))", height: "1px", background: "var(--pink-b)", transform: "scaleX(0)", transformOrigin: "right", transition: "transform .45s cubic-bezier(.16,1,.3,1)"}}></i></a>
+              <a href="#services" style={{position: "relative", fontSize: "calc(9.5*var(--tu))", fontWeight: "500", letterSpacing: "calc(1.1*var(--u))", textTransform: "uppercase", color: "var(--nav)", transition: "color .25s ease"}}>Services<i style={{position: "absolute", left: "0", right: "0", bottom: "calc(-6*var(--u))", height: "1px", background: "var(--pink-b)", transform: "scaleX(0)", transformOrigin: "right", transition: "transform .45s cubic-bezier(.16,1,.3,1)"}}></i></a>
+              <a href="#portfolio" style={{position: "relative", fontSize: "calc(9.5*var(--tu))", fontWeight: "500", letterSpacing: "calc(1.1*var(--u))", textTransform: "uppercase", color: "var(--nav)", transition: "color .25s ease"}}>Portfolio<i style={{position: "absolute", left: "0", right: "0", bottom: "calc(-6*var(--u))", height: "1px", background: "var(--pink-b)", transform: "scaleX(0)", transformOrigin: "right", transition: "transform .45s cubic-bezier(.16,1,.3,1)"}}></i></a>
+              <a href="#apropos" style={{position: "relative", fontSize: "calc(9.5*var(--tu))", fontWeight: "500", letterSpacing: "calc(1.1*var(--u))", textTransform: "uppercase", color: "var(--nav)", transition: "color .25s ease"}}>À propos<i style={{position: "absolute", left: "0", right: "0", bottom: "calc(-6*var(--u))", height: "1px", background: "var(--pink-b)", transform: "scaleX(0)", transformOrigin: "right", transition: "transform .45s cubic-bezier(.16,1,.3,1)"}}></i></a>
+              <a href="#contact" style={{position: "relative", fontSize: "calc(9.5*var(--tu))", fontWeight: "500", letterSpacing: "calc(1.1*var(--u))", textTransform: "uppercase", color: "var(--nav)", transition: "color .25s ease"}}>Contact<i style={{position: "absolute", left: "0", right: "0", bottom: "calc(-6*var(--u))", height: "1px", background: "var(--pink-b)", transform: "scaleX(0)", transformOrigin: "right", transition: "transform .45s cubic-bezier(.16,1,.3,1)"}}></i></a>
+            </nav>
+          </div>
+        </header>
+
+        <i data-lightveil="1" aria-hidden="true" style={{position: "fixed", inset: "0", zIndex: "990", pointerEvents: "none", opacity: "0"}}></i>
+        <i data-lightwarm="1" aria-hidden="true" style={{position: "fixed", inset: "0", zIndex: "991", pointerEvents: "none", mixBlendMode: "screen", opacity: "0"}}></i>
+        <section id="accueil" data-hero="1" data-screen-label="Hero" style={{height: "100vh", minHeight: "calc(560*var(--u))", position: "relative", background: "#000", scrollMarginTop: "0"}}>
+          <i data-plane="1" data-k=".2" aria-hidden="true" style={{position: "absolute", inset: "-14%", pointerEvents: "none", zIndex: "0", filter: "blur(calc(36*var(--u)))", mixBlendMode: "screen", background: "radial-gradient(50% 60% at 71% 47%, rgba(122,1,255,.20) 0%, rgba(122,1,255,.07) 38%, rgba(0,0,0,0) 65%)"}}></i>
+          <i data-floor="1" data-plane="1" data-k=".36" aria-hidden="true" style={{position: "absolute", left: "0", right: "0", bottom: "0", height: "46%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(72% 100% at 62% 118%, rgba(122,1,255,.30) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.04) 60%, rgba(0,0,0,0) 82%)"}}></i>
+          <i data-floor="2" aria-hidden="true" style={{position: "absolute", left: "0", right: "0", bottom: "0", height: "20%", pointerEvents: "none", zIndex: "0", background: "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,.55) 55%, #000 100%)"}}></i>
+          <div style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative", height: "100%"}}>
+            <div data-herocopy="1" style={{position: "absolute", left: "calc(82*var(--u))", top: "50%", width: "calc(370*var(--u))", transform: "translateY(calc(-50% + var(--cpy,0px)))", willChange: "transform"}}>
+              <h1 style={{margin: "0", fontWeight: "800", fontSize: "calc(67*var(--tu))", lineHeight: "calc(70*var(--tu))", textTransform: "uppercase", color: "#fff", letterSpacing: "0"}}>
+                <span style={{display: "block", overflow: "hidden", paddingBottom: ".04em"}}><i data-ln="1" style={{display: "block", fontStyle: "normal", transform: "translateY(112%)", transition: "transform 1.15s cubic-bezier(.16,1,.3,1) .05s"}}>Faisons</i></span>
+                <span style={{display: "block", overflow: "hidden", paddingBottom: ".04em"}}><i data-ln="2" style={{display: "block", fontStyle: "normal", transform: "translateY(112%)", transition: "transform 1.15s cubic-bezier(.16,1,.3,1) .15s"}}>décoller</i></span>
+                <span style={{display: "block", overflow: "hidden", paddingBottom: ".04em"}}><i data-ln="3" style={{display: "block", fontStyle: "normal", transform: "translateY(112%)", transition: "transform 1.15s cubic-bezier(.16,1,.3,1) .25s"}}>vos <em style={{fontStyle: "normal", color: "var(--violet-b)"}}>idées</em></i></span>
+              </h1>
+              <p data-heroline="p" style={{margin: "calc(28*var(--u)) 0 0", maxWidth: "calc(370*var(--u))", fontSize: "calc(14.5*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.88)", opacity: "0", transform: "translateY(calc(16*var(--u)))", transition: "opacity .9s ease .45s, transform .9s cubic-bezier(.16,1,.3,1) .45s"}}>
+                Bienvenue sur Pixovery.<br />
+                Création graphique &amp; direction artistique
+              </p>
+              <a href="#portfolio" data-heroline="btn" style={{display: "inline-flex", alignItems: "center", justifyContent: "space-between", background: "linear-gradient(176deg, #F4237E 0%, #E2006B 46%, #CC005F 100%)", color: "#fff", borderRadius: "calc(12*var(--u))", whiteSpace: "nowrap", fontSize: "calc(12*var(--tu))", fontWeight: "600", letterSpacing: "calc(.8*var(--u))", textTransform: "uppercase", marginTop: "calc(38*var(--u))", minWidth: "calc(223*var(--u))", height: "calc(44*var(--u))", padding: "0 calc(24*var(--u))", opacity: "0", transform: "translate(var(--mx,0px),calc(16*var(--u)))", transition: "opacity .9s ease .58s, transform .9s cubic-bezier(.16,1,.3,1) .58s, background .25s ease, box-shadow .3s cubic-bezier(.16,1,.3,1)"}}>Voir mes projets <span style={{marginLeft: "calc(14*var(--u))", fontSize: "calc(13*var(--tu))", lineHeight: "1"}}>→</span></a>
+            </div>
+
+            <div data-herovisual="1" style={{position: "absolute", left: "calc(468*var(--u))", top: "50%", width: "calc(492*var(--u))", height: "calc(492*var(--u))", transform: "translate(var(--px,0px), calc(-50% + var(--py,0px))) scale(var(--sc,1))", willChange: "transform"}}>
+              <i data-spot="1" data-plane="1" data-k="-.45" aria-hidden="true" style={{position: "absolute", inset: "-25%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(34% 34% at 64.7% 53%, rgba(143,43,255,.22) 0%, rgba(122,1,255,.11) 36%, rgba(122,1,255,.04) 60%, rgba(0,0,0,0) 80%)", filter: "blur(calc(22*var(--u)))"}}></i>
+            <i data-ground="1" aria-hidden="true" style={{position: "absolute", left: "-24%", right: "-24%", top: "84%", height: "42%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(46% 44% at 50% 22%, rgba(158,74,255,.24) 0%, rgba(126,10,255,.11) 40%, rgba(122,1,255,.035) 64%, rgba(0,0,0,0) 82%)", filter: "blur(calc(18*var(--u)))"}}></i>
+            <i data-shade="pot-soft" aria-hidden="true" style={{position: "absolute", left: "1%", top: "86.4%", width: "44%", height: "7.8%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.50) 0%, rgba(0,0,0,.27) 42%, rgba(0,0,0,.11) 64%, rgba(0,0,0,0) 80%)", filter: "blur(calc(9*var(--u)))"}}></i>
+            <i data-shade="feet-soft" aria-hidden="true" style={{position: "absolute", left: "48.5%", top: "86.6%", width: "38%", height: "7.4%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.50) 0%, rgba(0,0,0,.27) 42%, rgba(0,0,0,.11) 64%, rgba(0,0,0,0) 80%)", filter: "blur(calc(8*var(--u)))"}}></i>
+            <i data-shade="pot-core" aria-hidden="true" style={{position: "absolute", left: "8.5%", top: "87.5%", width: "29%", height: "3.4%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.66) 0%, rgba(0,0,0,.34) 45%, rgba(0,0,0,0) 78%)", filter: "blur(calc(4*var(--u)))"}}></i>
+            <i data-shade="feet-core" aria-hidden="true" style={{position: "absolute", left: "55.5%", top: "87.7%", width: "24%", height: "3.2%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.66) 0%, rgba(0,0,0,.34) 45%, rgba(0,0,0,0) 78%)", filter: "blur(calc(3.5*var(--u)))"}}></i>
+              <img data-ch="a" src="/assets/hero-cut-a.webp" alt="Pixovery — la figurine de Redha Devarenne et son pot à crayons" style={{position: "absolute", inset: "0", width: "100%", height: "100%", transition: "opacity .45s ease"}} width="1100" height="1100" decoding="async" fetchPriority="high" />
+              <img data-ch="b" src="/assets/hero-cut-b.webp" alt="" style={{position: "absolute", inset: "0", width: "100%", height: "100%", opacity: "0", transition: "opacity .45s ease"}} width="1100" height="1100" decoding="async" />
+              <span data-bulb="1" style={{position: "absolute", left: "49%", top: "40%", width: "42%", height: "42%", transform: "translate(-50%,-50%)", pointerEvents: "none", borderRadius: "50%", background: "radial-gradient(circle,rgba(255,168,60,.55) 0%,rgba(255,140,30,.22) 40%,rgba(255,130,20,0) 70%)", opacity: "0", transition: "opacity .45s ease, left .45s ease, top .45s ease"}}>
+                <i data-spark="1" style={{position: "absolute", left: "28%", top: "34%", width: "calc(5.1*var(--u))", height: "calc(5.1*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(12.2*var(--u)) calc(3.1*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(-9*var(--u))", "--dy": "calc(-30*var(--u))", animation: "spark 3.9s ease-in-out -0.4s infinite"}}></i>
+                <i data-spark="1" style={{position: "absolute", left: "68%", top: "28%", width: "calc(4.3*var(--u))", height: "calc(4.3*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(10.3*var(--u)) calc(2.6*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(7*var(--u))", "--dy": "calc(-26*var(--u))", animation: "spark 4.4s ease-in-out -1.9s infinite"}}></i>
+                <i data-spark="1" style={{position: "absolute", left: "50%", top: "17%", width: "calc(5.7*var(--u))", height: "calc(5.7*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(13.7*var(--u)) calc(3.4*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(-3*var(--u))", "--dy": "calc(-32*var(--u))", animation: "spark 3.4s ease-in-out -2.8s infinite"}}></i>
+                <i data-spark="1" style={{position: "absolute", left: "22%", top: "56%", width: "calc(4.7*var(--u))", height: "calc(4.7*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(11.3*var(--u)) calc(2.8*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(-8*var(--u))", "--dy": "calc(-27*var(--u))", animation: "spark 4.1s ease-in-out -0.9s infinite"}}></i>
+                <i data-spark="1" style={{position: "absolute", left: "76%", top: "52%", width: "calc(5.2*var(--u))", height: "calc(5.2*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(12.5*var(--u)) calc(3.1*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(9*var(--u))", "--dy": "calc(-29*var(--u))", animation: "spark 3.7s ease-in-out -3.3s infinite"}}></i>
+                <i data-spark="1" style={{position: "absolute", left: "38%", top: "20%", width: "calc(3.9*var(--u))", height: "calc(3.9*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(9.4*var(--u)) calc(2.3*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(-5*var(--u))", "--dy": "calc(-24*var(--u))", animation: "spark 4.6s ease-in-out -1.4s infinite"}}></i>
+                <i data-spark="1" style={{position: "absolute", left: "64%", top: "70%", width: "calc(4.8*var(--u))", height: "calc(4.8*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(11.5*var(--u)) calc(2.9*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(6*var(--u))", "--dy": "calc(-31*var(--u))", animation: "spark 3.6s ease-in-out -2.3s infinite"}}></i>
+                <i data-spark="1" style={{position: "absolute", left: "33%", top: "71%", width: "calc(4.2*var(--u))", height: "calc(4.2*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(10.1*var(--u)) calc(2.5*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(-7*var(--u))", "--dy": "calc(-25*var(--u))", animation: "spark 4.3s ease-in-out -3.8s infinite"}}></i>
+                <i data-spark="1" style={{position: "absolute", left: "72%", top: "38%", width: "calc(5.4*var(--u))", height: "calc(5.4*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(13.0*var(--u)) calc(3.2*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(8*var(--u))", "--dy": "calc(-28*var(--u))", animation: "spark 3.2s ease-in-out -1.1s infinite"}}></i>
+                <i data-spark="1" style={{position: "absolute", left: "48%", top: "77%", width: "calc(4.5*var(--u))", height: "calc(4.5*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(10.8*var(--u)) calc(2.7*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(-4*var(--u))", "--dy": "calc(-33*var(--u))", animation: "spark 4.0s ease-in-out -2.6s infinite"}}></i>
+              </span>
+              <div data-lens="l" style={{position: "absolute", overflow: "hidden", borderRadius: "30% 26% 38% 34% / 34% 34% 42% 42%", transform: "rotate(-3deg) translateZ(0)", pointerEvents: "none", zIndex: "3", left: "59.90%", top: "30.80%", width: "6.30%", height: "4.70%", transition: "left .45s ease, top .45s ease"}}>
+                <i style={{position: "absolute", left: "14%", top: "16%", width: "34%", height: "30%", borderRadius: "50%", background: "radial-gradient(ellipse at 35% 30%,rgba(255,255,255,.22),transparent 70%)", filter: "blur(calc(1.2*var(--u)))", opacity: ".55", animation: "sheen 6.5s ease-in-out infinite"}}></i>
+                <i style={{position: "absolute", top: "-30%", left: "0", width: "44%", height: "160%", background: "linear-gradient(102deg, transparent 0%, rgba(217,200,255,.28) 26%, rgba(255,255,255,.95) 50%, rgba(217,200,255,.28) 74%, transparent 100%)", filter: "blur(calc(1*var(--u)))", transform: "translateX(-170%)", opacity: "0", animation: "glint 3s cubic-bezier(.35,.05,.2,1) infinite"}}></i>
+                <i data-streak="1" style={{position: "absolute", top: "-30%", left: "0", width: "52%", height: "160%", background: "linear-gradient(102deg, transparent 0%, rgba(217,200,255,.22) 26%, rgba(255,255,255,.92) 50%, rgba(217,200,255,.22) 74%, transparent 100%)", filter: "blur(calc(1*var(--u)))", transform: "translateX(-160%)", opacity: "0"}}></i>
+              </div>
+              <div data-lens="r" style={{position: "absolute", overflow: "hidden", borderRadius: "30% 26% 38% 34% / 34% 34% 42% 42%", transform: "rotate(-3deg) translateZ(0)", pointerEvents: "none", zIndex: "3", left: "68.20%", top: "30.80%", width: "6.20%", height: "4.60%", transition: "left .45s ease, top .45s ease"}}>
+                <i style={{position: "absolute", left: "14%", top: "16%", width: "34%", height: "30%", borderRadius: "50%", background: "radial-gradient(ellipse at 35% 30%,rgba(255,255,255,.22),transparent 70%)", filter: "blur(calc(1.2*var(--u)))", opacity: ".55", animation: "sheen 6.5s ease-in-out infinite -2.7s"}}></i>
+                <i style={{position: "absolute", top: "-30%", left: "0", width: "44%", height: "160%", background: "linear-gradient(102deg, transparent 0%, rgba(217,200,255,.28) 26%, rgba(255,255,255,.95) 50%, rgba(217,200,255,.28) 74%, transparent 100%)", filter: "blur(calc(1*var(--u)))", transform: "translateX(-170%)", opacity: "0", animation: "glint 3s cubic-bezier(.35,.05,.2,1) .14s infinite"}}></i>
+                <i data-streak="1" style={{position: "absolute", top: "-30%", left: "0", width: "52%", height: "160%", background: "linear-gradient(102deg, transparent 0%, rgba(217,200,255,.22) 26%, rgba(255,255,255,.92) 50%, rgba(217,200,255,.22) 74%, transparent 100%)", filter: "blur(calc(1*var(--u)))", transform: "translateX(-160%)", opacity: "0"}}></i>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <section id="services" data-screen-label="Services" data-piste="services" style={{position: "relative", background: "#000", height: "400vh", scrollMarginTop: "0"}}>
+          <div data-colle="1" style={{position: "sticky", top: "0", height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "center"}}>
+          <i aria-hidden="true" style={{position: "absolute", inset: "0", pointerEvents: "none", zIndex: "0", background: "radial-gradient(ellipse calc(460*var(--u)) calc(330*var(--u)) at calc(50% - 145*var(--u)) calc(50% + 15*var(--u)), rgba(143,43,255,.085) 0%, rgba(143,43,255,.032) 42%, rgba(0,0,0,0) 100%)"}}></i>
+          <div data-svctete="1" style={{position: "absolute", left: "0", right: "0", top: "calc(84*var(--u))", zIndex: "3", width: "calc(1024*var(--u))", margin: "0 auto"}}>
+            <header data-chapter="1" style={{display: "grid", gridTemplateColumns: "calc(52*var(--u)) 1fr", alignItems: "center", columnGap: "calc(20*var(--u))", rowGap: "calc(22*var(--u))", padding: "0 calc(82*var(--u))"}}>
+              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>01</span>
+              <span data-rule="1" style={{height: "1px", background: "rgba(255,255,255,.16)", transform: "scaleX(0)", transformOrigin: "left", transition: "transform 1.2s cubic-bezier(.16,1,.3,1) .1s"}}></span>
+              <h2 style={{margin: "0", gridColumn: "1 / -1", fontWeight: "800", fontSize: "calc(46*var(--tu))", lineHeight: "calc(45*var(--tu))", textTransform: "uppercase", color: "#fff", letterSpacing: "calc(-.4*var(--u))"}}>Mes <em style={{fontStyle: "normal", color: "var(--violet-b)"}}>services</em></h2>
+            </header>
+
+            </div>
+            <div data-svcrail="1" style={{display: "flex", width: "400vw", willChange: "transform"}}>
+              <article data-svc="1" data-panneau="1" style={{flex: "0 0 100vw", width: "100vw", height: "100vh", position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(240*var(--u))", gridAutoRows: "min-content", alignContent: "center", alignItems: "center", columnGap: "calc(50*var(--u))", padding: "calc(150*var(--u)) calc((100vw - 1024*var(--u))/2 + 82*var(--u)) calc(120*var(--u))", boxSizing: "border-box"}}>
+                <i data-svcwash="1" style={{position: "absolute", left: "0", right: "0", top: "0", bottom: "0", zIndex: "0", background: "radial-gradient(ellipse calc(300*var(--u)) calc(330*var(--u)) at calc(50% + 315*var(--u)) calc(50% + 15*var(--u)), rgba(143,43,255,.26) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.045) 62%, rgba(0,0,0,0) 100%)", opacity: "0", transition: "opacity 1s ease"}}></i>
+                <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(6*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>01</span>
+                <h3 data-svch="1" style={{position: "relative", zIndex: "1", margin: "0", fontWeight: "700", fontSize: "calc(38*var(--tu))", lineHeight: "1.04", color: "#fff", letterSpacing: "calc(-.6*var(--u))", gridColumn: "1", margin: "0 0 calc(18*var(--u))", transition: "transform .55s cubic-bezier(.16,1,.3,1)"}}>Identité visuelle &amp; logo</h3>
+                <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong>Je crée des identités visuelles qui rendent les marques immédiatement reconnaissables.</strong> Je conçois votre logo et l’ensemble de votre univers graphique : palette de couleurs, typographies, éléments graphiques et direction artistique. Chaque détail est pensé pour créer une identité cohérente, distinctive et facilement déclinable sur vos supports de communication.</p>
+                <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "0s"}}><span data-floppy="1" style={{animationDelay: "0s"}}><img src="/assets/floppy/floppy-identite-visuelle.webp" alt="" style={{opacity: ".55", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
+              </article>
+              <article data-svc="1" data-panneau="1" style={{flex: "0 0 100vw", width: "100vw", height: "100vh", position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(240*var(--u))", gridAutoRows: "min-content", alignContent: "center", alignItems: "center", columnGap: "calc(50*var(--u))", padding: "calc(150*var(--u)) calc((100vw - 1024*var(--u))/2 + 82*var(--u)) calc(120*var(--u))", boxSizing: "border-box"}}>
+                <i data-svcwash="1" style={{position: "absolute", left: "0", right: "0", top: "0", bottom: "0", zIndex: "0", background: "radial-gradient(ellipse calc(300*var(--u)) calc(330*var(--u)) at calc(50% + 315*var(--u)) calc(50% + 15*var(--u)), rgba(143,43,255,.26) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.045) 62%, rgba(0,0,0,0) 100%)", opacity: "0", transition: "opacity 1s ease"}}></i>
+                <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(6*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>02</span>
+                <h3 data-svch="1" style={{position: "relative", zIndex: "1", margin: "0", fontWeight: "700", fontSize: "calc(38*var(--tu))", lineHeight: "1.04", color: "#fff", letterSpacing: "calc(-.6*var(--u))", gridColumn: "1", margin: "0 0 calc(18*var(--u))", transition: "transform .55s cubic-bezier(.16,1,.3,1)"}}>Design graphique &amp; print</h3>
+                <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong data-start="568" data-end="654">Je conçois des supports graphiques qui donnent du caractère à votre communication.</strong><br data-start="654" data-end="657" />
+      Affiches, flyers, packaging, cartes de visite ou contenus pour les réseaux sociaux : chaque création est pensée pour attirer l’attention et rester cohérente avec votre identité.</p>
+                <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "-2.4s"}}><span data-floppy="1" style={{animationDelay: "-.35s"}}><img src="/assets/floppy/floppy-print.webp" alt="" style={{opacity: ".55", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
+              </article>
+              <article data-svc="1" data-panneau="1" style={{flex: "0 0 100vw", width: "100vw", height: "100vh", position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(240*var(--u))", gridAutoRows: "min-content", alignContent: "center", alignItems: "center", columnGap: "calc(50*var(--u))", padding: "calc(150*var(--u)) calc((100vw - 1024*var(--u))/2 + 82*var(--u)) calc(120*var(--u))", boxSizing: "border-box"}}>
+                <i data-svcwash="1" style={{position: "absolute", left: "0", right: "0", top: "0", bottom: "0", zIndex: "0", background: "radial-gradient(ellipse calc(300*var(--u)) calc(330*var(--u)) at calc(50% + 315*var(--u)) calc(50% + 15*var(--u)), rgba(143,43,255,.26) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.045) 62%, rgba(0,0,0,0) 100%)", opacity: "0", transition: "opacity 1s ease"}}></i>
+                <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(6*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>03</span>
+                <h3 data-svch="1" style={{position: "relative", zIndex: "1", margin: "0", fontWeight: "700", fontSize: "calc(38*var(--tu))", lineHeight: "1.04", color: "#fff", letterSpacing: "calc(-.6*var(--u))", gridColumn: "1", margin: "0 0 calc(18*var(--u))", transition: "transform .55s cubic-bezier(.16,1,.3,1)"}}>Web design</h3>
+                <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong data-start="856" data-end="929">Je conçois des sites web qui donnent envie de découvrir votre marque.&nbsp;</strong>Site vitrine, ou interface sur mesure : je travaille le design, l’expérience utilisateur et la structure de chaque page pour créer une expérience claire, fluide et mémorable.</p>
+                <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "-4.8s"}}><span data-floppy="1" style={{animationDelay: "-.7s"}}><img src="/assets/floppy/floppy-web.webp" alt="" style={{opacity: ".55", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
+              </article>
+              <article data-svc="1" data-panneau="1" style={{flex: "0 0 100vw", width: "100vw", height: "100vh", position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(240*var(--u))", gridAutoRows: "min-content", alignContent: "center", alignItems: "center", columnGap: "calc(50*var(--u))", padding: "calc(150*var(--u)) calc((100vw - 1024*var(--u))/2 + 82*var(--u)) calc(120*var(--u))", boxSizing: "border-box"}}>
+                <i data-svcwash="1" style={{position: "absolute", left: "0", right: "0", top: "0", bottom: "0", zIndex: "0", background: "radial-gradient(ellipse calc(300*var(--u)) calc(330*var(--u)) at calc(50% + 315*var(--u)) calc(50% + 15*var(--u)), rgba(143,43,255,.26) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.045) 62%, rgba(0,0,0,0) 100%)", opacity: "0", transition: "opacity 1s ease"}}></i>
+                <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(6*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>04</span>
+                <h3 data-svch="1" style={{position: "relative", zIndex: "1", margin: "0", fontWeight: "700", fontSize: "calc(38*var(--tu))", lineHeight: "1.04", color: "#fff", letterSpacing: "calc(-.6*var(--u))", gridColumn: "1", margin: "0 0 calc(18*var(--u))", transition: "transform .55s cubic-bezier(.16,1,.3,1)"}}>Illustration</h3>
+                <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong data-start="1143" data-end="1242">Je crée des illustrations sur mesure pour donner une personnalité unique à votre communication.</strong><br data-start="1242" data-end="1245" />
+      Personnages, visuels de marque, illustrations éditoriales ou univers graphiques : je dessine des images adaptées à votre projet, plutôt que de vous proposer des visuels génériques.<br /></p>
+                <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "-7.2s"}}><span data-floppy="1" style={{animationDelay: "-1.05s"}}><img src="/assets/floppy/floppy-illustration.webp" alt="" style={{opacity: ".55", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
+              </article>
+            </div>
+            <div data-svcjauge="1" style={{position: "absolute", left: "0", right: "0", bottom: "calc(56*var(--u))", zIndex: "3", width: "calc(1024*var(--u))", margin: "0 auto", padding: "0 calc(82*var(--u))", display: "flex", alignItems: "center", gap: "calc(18*var(--u))"}}>
+              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2*var(--u))", color: "rgba(255,255,255,.42)"}}><em data-svcn="1" style={{fontStyle: "normal", color: "var(--pink-b)"}}>01</em> / 04</span>
+              <span style={{flex: "1", height: "1px", background: "rgba(255,255,255,.12)", position: "relative"}}><i data-svcbarre="1" style={{position: "absolute", left: "0", top: "0", height: "100%", width: "25%", background: "linear-gradient(90deg,var(--violet-b),var(--pink))", transition: "left .25s ease"}}></i></span>
+            </div>
+          </div>
+        </section><section id="portfolio" data-gallery="1" data-screen-label="Portfolio" style={{position: "relative", background: "#000", scrollMarginTop: "calc(76*var(--u))"}}>
+          <i data-ambient="1" aria-hidden="true" style={{position: "absolute", inset: "0", pointerEvents: "none", zIndex: "0", background: "radial-gradient(34% 34% at 36% 40%, var(--accent, rgba(143,43,255,.075)) 0%, rgba(0,0,0,0) 100%)", transition: "background 1.1s ease"}}></i>
+          <div style={{position: "relative", display: "flex", flexDirection: "column", justifyContent: "center", overflow: "hidden", zIndex: "1", padding: "calc(45*var(--u)) 0 calc(50*var(--u))"}}>
+            <header data-galhead="1" style={{display: "grid", gridTemplateColumns: "calc(52*var(--u)) 1fr auto", alignItems: "center", columnGap: "calc(20*var(--u))", rowGap: "calc(22*var(--u))", padding: "0 calc(82*var(--u)) calc(30*var(--u))"}}>
+              <span style={{gridColumn: "1", fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>02</span>
+              <span data-rule="1" style={{gridColumn: "2", height: "1px", background: "rgba(255,255,255,.16)", transform: "scaleX(0)", transformOrigin: "left", transition: "transform 1.2s cubic-bezier(.16,1,.3,1) .1s"}}></span>
+              <div style={{gridColumn: "3", gridRow: "2", alignSelf: "center", display: "flex", alignItems: "center", gap: "calc(26*var(--u))"}}>
+                <span style={{fontSize: "calc(13*var(--tu))", letterSpacing: "calc(1.5*var(--u))", color: "rgba(255,255,255,.4)"}}><em data-galindex="1" style={{fontStyle: "normal", color: "#fff", fontWeight: "600"}}>01</em> / <i style={{fontStyle: "normal"}}>11</i></span>
+                <div style={{display: "flex", gap: "calc(8*var(--u))"}}>
+                  <button data-galprev="1" aria-label="Projet précédent" data-magnetic="1" style={{width: "calc(44*var(--u))", height: "calc(44*var(--u))", borderRadius: "50%", border: "1px solid rgba(255,255,255,.18)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "calc(15*var(--tu))", transition: "border-color .3s ease,background .3s ease,transform .3s ease"}}>←</button>
+                  <button data-galnext="1" aria-label="Projet suivant" data-magnetic="1" style={{width: "calc(44*var(--u))", height: "calc(44*var(--u))", borderRadius: "50%", border: "1px solid rgba(255,255,255,.18)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "calc(15*var(--tu))", transition: "border-color .3s ease,background .3s ease,transform .3s ease"}}>→</button>
+                </div>
+              </div>
+              <div style={{gridColumn: "1 / 3", gridRow: "2", alignSelf: "center"}}>
+                <h2 style={{margin: "0", fontWeight: "800", fontSize: "calc(46*var(--tu))", lineHeight: "calc(45*var(--tu))", textTransform: "uppercase", color: "#fff", letterSpacing: "calc(-.4*var(--u))"}}>Mes <em style={{fontStyle: "normal", color: "var(--violet-b)"}}>projets</em></h2>
+              </div>
+            </header>
+
+            <div data-galtrack="1" style={{display: "flex", alignItems: "center", gap: "calc(46*var(--u))", padding: "calc(46*var(--u)) calc(82*var(--u)) 0", willChange: "transform", cursor: "grab", touchAction: "pan-y"}}>
+              <article data-piece="violet" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>01</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-restaurant-sushi-kabuki-sushi.webp" alt="Identité visuelle Kabuki Sushi : logo mascotte, enseigne, packaging et menu de restaurant japonais" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Kabuki Sushi</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et menu</p>
+                </div>
+              </article>
+              <article data-piece="pink" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>02</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/creation-logo-identite-visuelle-donuts-crazy-donutz.webp" alt="Création de logo et identité visuelle Crazy Donutz : packaging, boîtes et carte pour une boutique de donuts" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Crazy Donutz</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et carte</p>
+                </div>
+              </article>
+              <article data-piece="violet" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>03</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-marque-sport-cyclisme-ashkan-sports.webp" alt="Identité visuelle Ashkan Sports : logo, étiquettes et accessoires pour une marque de sport et cyclisme" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Ashkan Sports</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et déclinaisons boutique</p>
+                </div>
+              </article>
+              <article data-piece="pink" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>04</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/creation-logo-livraison-repas-bring-eat.webp" alt="Création de logo Bring Eat : identité et supports pour un service de livraison de repas" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Bring Eat</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et supports livraison</p>
+                </div>
+              </article>
+              <article data-piece="violet" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>05</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-bar-cocktails-bikini-bar.webp" alt="Identité visuelle Bikini Bar : logo néon rose, carte de cocktails et signalétique de bar" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Bikini Bar</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, carte et signalétique</p>
+                </div>
+              </article>
+              <article data-piece="pink" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>06</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/creation-logo-burger-fast-food-top-bun.webp" alt="Création de logo Top Bun : déclinaisons du logo et packaging pour un fast-food burger" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Top Bun</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et packaging fast-food</p>
+                </div>
+              </article>
+              <article data-piece="violet" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>07</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-visite-virtuelle-matterport-neometris.webp" alt="Identité visuelle Neometris : logo, plaquette et interface pour un studio de visites virtuelles Matterport" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Neometris</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, plaquette et interface</p>
+                </div>
+              </article>
+              <article data-piece="pink" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>08</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-accessoires-mode-pimp-up-paris.webp" alt="Identité visuelle Pimp'Up Paris : logo, coffret et campagne pour une marque d'accessoires de mode" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Pimp'Up</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et campagne</p>
+                </div>
+              </article>
+              <article data-piece="violet" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>09</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-friperie-mode-seconde-main-o-bohneur-demy.webp" alt="Identité visuelle Ô Bohneur D'Emy : logo, étiquettes et tote bag pour une friperie de mode seconde main" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Ô Bohneur D'Emy</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, étiquettes et textile</p>
+                </div>
+              </article>
+              <article data-piece="pink" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>10</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/creation-logo-packaging-fish-and-chips-mr-fish.webp" alt="Création de logo Mr. Fish : packaging fish and chips à emporter, sachet et gobelet" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Mr. Fish</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et packaging à emporter</p>
+                </div>
+              </article>
+              <article data-piece="violet" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>11</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-restaurant-chinois-jung-fu.webp" alt="Identité visuelle Jung Fu : logo, enseigne et packaging pour un restaurant chinois" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Jung Fu</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et packaging restaurant</p>
+                </div>
+              </article>
+            </div>
+            <div data-galrail="1" aria-hidden="true" style={{margin: "calc(38*var(--u)) calc(82*var(--u)) 0", height: "1px", background: "rgba(255,255,255,.12)", position: "relative"}}>
+              <i data-galrailbar="1" style={{position: "absolute", left: "0", top: "calc(-1*var(--u))", height: "calc(3*var(--u))", width: "22%", background: "linear-gradient(90deg,var(--violet-b),var(--pink))", transition: "left .25s cubic-bezier(.16,1,.3,1)"}}></i>
+            </div>
+          </div>
+        </section>
+
+        <div data-lightbox="1" aria-hidden="true" style={{position: "fixed", inset: "0", zIndex: "120", display: "flex", alignItems: "center", justifyContent: "center", padding: "calc(26*var(--u))", opacity: "0", visibility: "hidden", transition: "opacity .5s ease, visibility .5s ease"}}>
+          <i aria-hidden="true" style={{position: "absolute", inset: "0", background: "rgba(5,2,10,.93)", backdropFilter: "blur(calc(12*var(--u)))"}}></i>
+          <i aria-hidden="true" style={{position: "absolute", inset: "0", pointerEvents: "none", background: "radial-gradient(52% 52% at 50% 46%, rgba(143,43,255,.14) 0%, rgba(0,0,0,0) 72%)"}}></i>
+          <button data-lbclose="1" aria-label="Fermer le visuel" style={{position: "absolute", top: "calc(26*var(--u))", right: "calc(30*var(--u))", width: "calc(46*var(--u))", height: "calc(46*var(--u))", borderRadius: "50%", border: "1px solid rgba(255,255,255,.22)", background: "rgba(0,0,0,.4)", color: "#fff", fontSize: "calc(15*var(--tu))", lineHeight: "1", zIndex: "3", cursor: "pointer", transition: "border-color .3s ease,background .3s ease"}} style-hover="border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.08)">&#10005;</button>
+          <figure data-lbbox="1" style={{position: "relative", zIndex: "2", margin: "0", maxWidth: "min(1320px,94vw)", display: "flex", flexDirection: "column", alignItems: "center", gap: "calc(20*var(--u))", transform: "scale(.94) translateY(calc(16*var(--u)))", transition: "transform .65s cubic-bezier(.16,1,.3,1)"}}>
+            <img data-lbimg="1" alt="" style={{display: "block", maxWidth: "100%", maxHeight: "82vh", objectFit: "contain", borderRadius: "calc(4*var(--u))", cursor: "zoom-in"}} />
+            <figcaption style={{display: "flex", alignItems: "baseline", justifyContent: "center", gap: "calc(16*var(--u))", flexWrap: "wrap"}}>
+              <span data-lbtitle="1" style={{fontWeight: "700", fontSize: "calc(21*var(--tu))", color: "#fff"}}></span>
+              <span data-lbmeta="1" style={{fontSize: "calc(11*var(--tu))", letterSpacing: "calc(1.5*var(--u))", textTransform: "uppercase", color: "rgba(255,255,255,.45)"}}></span>
+            </figcaption>
+          </figure>
+        </div>
+
+
+        {/* ---------------------------------------------------------------
+            TEMOIGNAGES — textes de REMPLACEMENT, noms inventes. A remplacer
+            par de vrais retours avant mise en ligne.
+
+            Chaque temoignage est mis en page comme l'ETIQUETTE PAPIER d'une
+            disquette 3,5" : un lisere de tete colore, le nom du client, la
+            discipline et sa reference, puis la zone d'ecriture. Services
+            montre les disquettes ; ici on lit ce qui est ecrit dessus. Le
+            vocabulaire vient donc du site lui-meme, il n'est pas importe.
+
+            Un seul indice de forme porte la reference : le COIN SUPERIEUR
+            DROIT COUPE (clip-path), la silhouette d'une 3,5". Pas de fausse
+            texture papier, pas d'ombre imitant du ruban adhesif : un seul
+            signe precis vaut mieux que trois approximatifs.
+
+            Le fond des cartes reprend EXACTEMENT le degrade des cadres du
+            portfolio (#1B1020 / #0B0B10 / #150F1C) : c'est deja le jeton
+            "surface" du site. Les liseres alternent violet / rose / violet,
+            comme les cartes du portfolio alternent data-piece.
+
+            Tout le style est dans global.css, bloc TEMOIGNAGES — il faut
+            :hover et clip-path, que le style inline ne sait pas porter.
+            Ici on ne garde que la structure et la parallaxe.
+            --------------------------------------------------------------- */}
+        <section id="temoignages" data-screen-label="Témoignages" style={{position: "relative", background: "#000", overflow: "hidden", padding: "calc(118*var(--u)) 0 calc(140*var(--u))", scrollMarginTop: "calc(76*var(--u))"}}>
+          <i aria-hidden="true" style={{position: "absolute", inset: "0", pointerEvents: "none", zIndex: "0", background: "radial-gradient(ellipse calc(560*var(--u)) calc(300*var(--u)) at 50% calc(50% + 30*var(--u)), rgba(143,43,255,.075) 0%, rgba(143,43,255,.026) 44%, rgba(0,0,0,0) 100%)"}}></i>
+          <div style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative", zIndex: "1"}}>
+            <header data-chapter="1" style={{display: "grid", gridTemplateColumns: "calc(52*var(--u)) 1fr", alignItems: "center", columnGap: "calc(20*var(--u))", padding: "0 calc(82*var(--u))", marginBottom: "calc(30*var(--u))"}}>
+              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>03</span>
+              <span data-rule="1" style={{height: "1px", background: "rgba(255,255,255,.16)", transform: "scaleX(0)", transformOrigin: "left", transition: "transform 1.2s cubic-bezier(.16,1,.3,1) .1s"}}></span>
+            </header>
+            <h2 data-reveal="1" style={{margin: "0 0 calc(54*var(--u))", padding: "0 calc(82*var(--u))", fontWeight: "800", fontSize: "calc(28*var(--tu))", lineHeight: "calc(33*var(--tu))", textTransform: "uppercase", letterSpacing: "calc(.5*var(--u))", color: "#fff"}}>Ce qu'ils en <em style={{fontStyle: "normal", color: "var(--violet-b)"}}>retiennent</em></h2>
+            <div data-temoins="1" style={{display: "flex", alignItems: "stretch", gap: "calc(40*var(--u))", padding: "0 calc(82*var(--u))"}}>
+              <div data-par="22" style={{flex: "1", minWidth: "0", marginTop: "calc(0*var(--u))", transform: "translateY(var(--ty,0px))", willChange: "transform", display: "flex"}}>
+                <article data-temoin="violet" data-reveal="1">
+                  <header data-temtete="1">
+                    <p data-temclient="1">Kabuki Sushi<span>IDV-01</span></p>
+                    <p data-temdisc="1">Identité visuelle</p>
+                  </header>
+                  <p data-temtxt="1">Il a commencé par nous demander pourquoi on avait ouvert, pas quelles couleurs on voulait. La mascotte est sortie de cette conversation-là.</p>
+                  <footer data-tempied="1">
+                    <b>Léa Marchand</b><span>Gérante</span>
+                  </footer>
+                </article>
+              </div>
+              <div data-par="40" style={{flex: "1", minWidth: "0", marginTop: "calc(24*var(--u))", transform: "translateY(var(--ty,0px))", willChange: "transform", display: "flex"}}>
+                <article data-temoin="pink" data-reveal="1">
+                  <header data-temtete="1">
+                    <p data-temclient="1">Ô Bohneur D'Emy<span>DA-04</span></p>
+                    <p data-temdisc="1">Direction artistique</p>
+                  </header>
+                  <p data-temtxt="1">J'avais peur que ça fasse trop. Il a enlevé la moitié de ce que je lui demandais, et il m'a expliqué pourquoi. Il avait raison.</p>
+                  <footer data-tempied="1">
+                    <b>Emy Doucet</b><span>Fondatrice</span>
+                  </footer>
+                </article>
+              </div>
+              <div data-par="58" style={{flex: "1", minWidth: "0", marginTop: "calc(48*var(--u))", transform: "translateY(var(--ty,0px))", willChange: "transform", display: "flex"}}>
+                <article data-temoin="violet" data-reveal="1">
+                  <header data-temtete="1">
+                    <p data-temclient="1">Top Bun<span>LOG-07</span></p>
+                    <p data-temdisc="1">Logo et packaging</p>
+                  </header>
+                  <p data-temtxt="1">On lui a envoyé trois références qui n'allaient pas ensemble. Il est revenu avec une piste qui ne ressemblait à aucune. C'est celle qu'on a gardée.</p>
+                  <footer data-tempied="1">
+                    <b>Yanis Berrada</b><span>Cofondateur</span>
+                  </footer>
+                </article>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="processus" data-screen-label="Processus" style={{position: "relative", background: "#000", padding: "calc(45*var(--u)) 0 calc(50*var(--u))", scrollMarginTop: "calc(76*var(--u))"}}>
+          <div style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative"}}>
+            <header data-chapter="1" style={{display: "grid", gridTemplateColumns: "calc(52*var(--u)) 1fr", alignItems: "center", columnGap: "calc(20*var(--u))", rowGap: "calc(22*var(--u))", padding: "0 calc(82*var(--u))"}}>
+              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>04</span>
+              <span data-rule="1" style={{height: "1px", background: "rgba(255,255,255,.16)", transform: "scaleX(0)", transformOrigin: "left", transition: "transform 1.2s cubic-bezier(.16,1,.3,1) .1s"}}></span>
+              <h2 style={{margin: "0", gridColumn: "1 / -1", fontWeight: "800", fontSize: "calc(46*var(--tu))", lineHeight: "calc(45*var(--tu))", textTransform: "uppercase", color: "#fff", letterSpacing: "calc(-.4*var(--u))"}}>Mon <em style={{fontStyle: "normal", color: "var(--violet-b)"}}>processus</em></h2>
+            </header>
+
+            <div data-procrail="1" style={{display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(386*var(--u))", columnGap: "calc(60*var(--u))", alignItems: "start", padding: "0 calc(82*var(--u))", marginTop: "calc(64*var(--u))"}}>
+            <ol data-steps="1" style={{position: "relative", listStyle: "none", margin: "0", padding: "0"}}>
+              <i data-draw="1" style={{position: "absolute", left: "calc(38*var(--u))", top: "calc(38*var(--u))", width: "1px", height: "calc(100% - 76*var(--u))", background: "var(--pink)", transform: "scaleY(var(--draw,0))", transformOrigin: "top", transition: "transform .1s linear"}}></i>
+              <li data-step="1" style={{position: "relative", display: "grid", gridTemplateColumns: "calc(76*var(--u)) minmax(0,1fr)", columnGap: "calc(40*var(--u))", alignItems: "start", padding: "calc(30*var(--u)) 0"}}>
+                <span data-stepnum="1" style={{width: "calc(76*var(--u))", height: "calc(76*var(--u))", borderRadius: "50%", border: "1px solid var(--pink)", background: "var(--dark)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "calc(24*var(--tu))", color: "#fff", transition: "background .5s ease,color .5s ease,transform .5s cubic-bezier(.16,1,.3,1)"}}>01</span>
+                <div style={{paddingTop: "calc(12*var(--u))", maxWidth: "calc(330*var(--u))"}}>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(24*var(--tu))", lineHeight: "1.1", color: "#fff"}}>On se parle</h3>
+                  <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.45)"}}>Vous me présentez votre projet, vos idées et vos envies, même lorsqu’elles sont encore floues. Je vous pose les bonnes questions pour comprendre ce que vous voulez vraiment créer.</p>
+                </div>
+              </li>
+              <li data-step="1" style={{position: "relative", display: "grid", gridTemplateColumns: "calc(76*var(--u)) minmax(0,1fr)", columnGap: "calc(40*var(--u))", alignItems: "start", padding: "calc(30*var(--u)) 0"}}>
+                <span data-stepnum="1" style={{width: "calc(76*var(--u))", height: "calc(76*var(--u))", borderRadius: "50%", border: "1px solid var(--pink)", background: "var(--dark)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "calc(24*var(--tu))", color: "#fff", transition: "background .5s ease,color .5s ease,transform .5s cubic-bezier(.16,1,.3,1)"}}>02</span>
+                <div style={{paddingTop: "calc(12*var(--u))", maxWidth: "calc(330*var(--u))"}}>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(24*var(--tu))", lineHeight: "1.1", color: "#fff"}}>Direction créative</h3>
+                  <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.45)"}}>Je transforme vos idées en une direction visuelle claire. Références, intentions, pistes créatives : on construit ensemble un univers cohérent avant de passer à la création.</p>
+                </div>
+              </li>
+              <li data-step="1" style={{position: "relative", display: "grid", gridTemplateColumns: "calc(76*var(--u)) minmax(0,1fr)", columnGap: "calc(40*var(--u))", alignItems: "start", padding: "calc(30*var(--u)) 0"}}>
+                <span data-stepnum="1" style={{width: "calc(76*var(--u))", height: "calc(76*var(--u))", borderRadius: "50%", border: "1px solid var(--pink)", background: "var(--dark)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "calc(24*var(--tu))", color: "#fff", transition: "background .5s ease,color .5s ease,transform .5s cubic-bezier(.16,1,.3,1)"}}>03</span>
+                <div style={{paddingTop: "calc(12*var(--u))", maxWidth: "calc(330*var(--u))"}}>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(24*var(--tu))", lineHeight: "1.1", color: "#fff"}}>Création</h3>
+                  <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.45)"}}>Je donne vie à la direction définie, puis j’ajuste chaque détail avec vos retours. Le projet évolue au fil des échanges jusqu’à trouver le bon équilibre entre idée et réalisation.</p>
+                </div>
+              </li>
+              <li data-step="1" style={{position: "relative", display: "grid", gridTemplateColumns: "calc(76*var(--u)) minmax(0,1fr)", columnGap: "calc(40*var(--u))", alignItems: "start", padding: "calc(30*var(--u)) 0"}}>
+                <span data-stepnum="1" style={{width: "calc(76*var(--u))", height: "calc(76*var(--u))", borderRadius: "50%", border: "1px solid var(--pink)", background: "var(--dark)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "calc(24*var(--tu))", color: "#fff", transition: "background .5s ease,color .5s ease,transform .5s cubic-bezier(.16,1,.3,1)"}}>04</span>
+                <div style={{paddingTop: "calc(12*var(--u))", maxWidth: "calc(330*var(--u))"}}>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(24*var(--tu))", lineHeight: "1.1", color: "#fff"}}>Livraison</h3>
+                  <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.45)"}}>Je vous livre tous les éléments finalisés, déclinés dans les bons formats et prêts à être utilisés sur tous vos supports. Et si vos besoins évoluent, je reste disponible pour la suite.</p>
+                </div>
+              </li>
+            </ol>
+
+              {/* Le tour : 72 poses a 5 degres, deux planches de 36 cases.
+                  Collant, il tourne pendant qu'on lit les quatre etapes.
+                  mix-blend-mode:screen -> le fond noir des images disparait. */}
+              <div data-tour="1" style={{position: "sticky", top: "calc(50vh - 203*var(--u))", justifySelf: "end", width: "calc(386*var(--u))", height: "calc(386*var(--u))", willChange: "opacity, transform"}} aria-hidden="true">
+                <canvas data-spin="1" width="576" height="576" style={{position: "absolute", inset: "0", width: "100%", height: "100%", mixBlendMode: "screen"}}></canvas>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="apropos" data-screen-label="À propos" style={{position: "relative", overflow: "hidden", background: "#000", minHeight: "100vh", display: "flex", alignItems: "center", padding: "calc(40*var(--u)) 0 calc(32*var(--u))", scrollMarginTop: "0"}}>
+          <div style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative"}}>
+            <header data-chapter="1" style={{display: "grid", gridTemplateColumns: "calc(52*var(--u)) 1fr", alignItems: "center", columnGap: "calc(20*var(--u))", rowGap: "0", padding: "0 calc(82*var(--u))", marginBottom: "calc(30*var(--u))"}}>
+              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>05</span>
+              <span data-rule="1" style={{height: "1px", background: "rgba(255,255,255,.16)", transform: "scaleX(0)", transformOrigin: "left", transition: "transform 1.2s cubic-bezier(.16,1,.3,1) .1s"}}></span>
+            </header>
+            <div data-aboutrow="1" style={{display: "flex", alignItems: "flex-start", gap: "calc(20*var(--u))", paddingLeft: "calc(82*var(--u))", paddingRight: "calc(82*var(--u))"}}>
+              <div data-par="-34" style={{flex: "1", minWidth: "0", transform: "translateY(var(--ty,0px))", willChange: "transform"}}>
+                <h2 data-reveal="1" style={{margin: "0", fontSize: "calc(28*var(--tu))", fontWeight: "800", lineHeight: "calc(33*var(--tu))", textTransform: "uppercase", letterSpacing: "calc(.5*var(--u))", color: "#fff"}}>Explorateur<br />d'idées à votre <em style={{fontStyle: "normal", color: "var(--violet-b)"}}>service</em></h2>
+                <div data-abouttext="1" style={{marginTop: "calc(30*var(--u))", width: "100%", textAlign: "justify", hyphens: "auto"}}>
+                  <p data-reveal="1" style={{margin: "0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(400*var(--u))"}}>J’aime trouver des idées là où on ne les attend pas. Je suis Redha Devarenne, graphiste freelance et illustrateur. Mon travail commence souvent par une question simple : comment rendre une idée plus intéressante, plus évidente ou complètement différente ?</p>
+                  <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(400*var(--u))"}}>Je cherche des concepts, j’imagine des univers, j’associe des images, des formes, des couleurs et des mots jusqu’à trouver ce petit déclic qui donne une direction au projet. J’aime expérimenter, faire des détours et mélanger les références.</p>
+                  <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(400*var(--u))"}}>Identité visuelle, logo, illustration, direction artistique ou création digitale : je ne me contente pas de mettre une idée en forme. Je cherche d’abord la bonne idée à mettre en forme, quitte à prendre un chemin qui n’était pas prévu.</p>
+                  <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(400*var(--u))"}}>Parce qu’une bonne idée n’arrive pas toujours en suivant la ligne droite. Mon objectif : créer des identités et des images qui ont quelque chose à dire, quelque chose à montrer et surtout, quelque chose à faire ressentir.</p>
+                  <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(400*var(--u))"}}>Bienvenue dans mon univers.</p>
+                </div>
+                <img data-signature="1" src="/assets/img08.webp" alt="Signature Pixovery" style={{marginTop: "calc(14*var(--u))", width: "calc(176*var(--u))", height: "auto", mixBlendMode: "screen"}} width="620" height="237" decoding="async" loading="lazy" />
+              </div>
+              <div data-floater="1" data-par="88" data-aboutphoto="1" style={{flex: "none", width: "calc(510*var(--u))", position: "relative", top: "calc(61*var(--u))", marginRight: "calc(-40*var(--u))", transform: "translateY(var(--ty,0px))", willChange: "transform"}}>
+                <video ref={this.setVideoRef} src="/assets/about-anim.mp4" autoPlay={true} muted={true} defaultmuted="" loop={true} playsInline={true} webkit-playsinline="true" preload="auto" poster="/assets/img09.webp" aria-label="Redha Devarenne au travail" style={{display: "block", width: "100%", height: "auto", mixBlendMode: "screen"}}></video>
+                <i aria-hidden="true" style={{position: "absolute", left: "0", right: "0", bottom: "0", height: "calc(190*var(--u))", pointerEvents: "none", background: "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,.30) 40%, rgba(0,0,0,.75) 70%, #000 92%)"}}></i>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="contact" data-screen-label="Contact" style={{position: "relative", background: "#000", padding: "calc(45*var(--u)) 0 calc(50*var(--u))", scrollMarginTop: "calc(76*var(--u))"}}>
+          <div style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative", marginBottom: "calc(30*var(--u))"}}>
+            <header data-chapter="1" style={{display: "grid", gridTemplateColumns: "calc(52*var(--u)) 1fr", alignItems: "center", columnGap: "calc(20*var(--u))", padding: "0 calc(82*var(--u))"}}>
+              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>06</span>
+              <span data-rule="1" style={{height: "1px", background: "rgba(255,255,255,.16)", transform: "scaleX(0)", transformOrigin: "left", transition: "transform 1.2s cubic-bezier(.16,1,.3,1) .1s"}}></span>
+            </header>
+          </div>
+          <div data-contactrow="1" style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative", display: "flex", alignItems: "center", gap: "calc(44*var(--u))", paddingLeft: "calc(82*var(--u))", paddingRight: "calc(82*var(--u))"}}>
+            <div data-floater="1" data-par="72" data-contactphoto="1" style={{flex: "none", width: "calc(470*var(--u))", position: "relative", transform: "translateY(var(--ty,0px))", willChange: "transform"}}>
+              <i aria-hidden="true" style={{position: "absolute", left: "6%", right: "6%", top: "74%", height: "30%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(52% 50% at 50% 52%, rgba(143,43,255,.20) 0%, rgba(122,1,255,.09) 38%, rgba(122,1,255,.03) 60%, rgba(0,0,0,0) 78%)", filter: "blur(calc(16*var(--u)))"}}></i>
+              <img src="/assets/img10.webp" alt="Pixovery — contact" style={{position: "relative", zIndex: "1", width: "100%", height: "auto", mixBlendMode: "screen", WebkitMaskImage: "linear-gradient(to bottom,#000 0%,#000 88%,rgba(0,0,0,.92) 92%,rgba(0,0,0,.60) 95.5%,rgba(0,0,0,.24) 98%,rgba(0,0,0,0) 100%)", maskImage: "linear-gradient(to bottom,#000 0%,#000 88%,rgba(0,0,0,.92) 92%,rgba(0,0,0,.60) 95.5%,rgba(0,0,0,.24) 98%,rgba(0,0,0,0) 100%)"}} width="1000" height="1023" decoding="async" loading="lazy" />
+              <div aria-hidden="true" style={{position: "absolute", left: "28.5%", top: "44.9%", width: "28.8%", height: "17.1%", overflow: "hidden", display: "flex", alignItems: "center", pointerEvents: "none", zIndex: "3", transformOrigin: "50% 50%", transform: "rotate(3.2deg)", animation: "crt-flicker 3.4s steps(1) infinite"}}>
+                <div style={{display: "flex", flex: "none", animation: "crt-scroll 5.5s linear infinite", willChange: "transform"}}>
+                  <span style={{fontFamily: "'VT323',monospace", fontSize: "calc(59*var(--tu))", lineHeight: "1", letterSpacing: "calc(-0.5*var(--u))", color: "#3A0233", paddingRight: "calc(26*var(--u))", whiteSpace: "nowrap", wordSpacing: "calc(-6*var(--u))"}}>SO CALL ME MAYBE</span>
+                  <span style={{fontFamily: "'VT323',monospace", fontSize: "calc(59*var(--tu))", lineHeight: "1", letterSpacing: "calc(-0.5*var(--u))", color: "#3A0233", paddingRight: "calc(26*var(--u))", whiteSpace: "nowrap", wordSpacing: "calc(-6*var(--u))"}}>SO CALL ME MAYBE</span>
+                </div>
+                <i style={{position: "absolute", inset: "0", background: "repeating-linear-gradient(to bottom, rgba(0,0,0,.62) 0 1px, rgba(0,0,0,.16) 1px 2px, rgba(0,0,0,0) 2px 3px)", opacity: ".95", animation: "crt-roll .12s linear infinite"}}></i>
+                <i style={{position: "absolute", left: "0", right: "0", top: "0", height: "38%", background: "linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,180,240,.10) 45%, rgba(255,255,255,.22) 60%, rgba(255,180,240,.08) 75%, rgba(255,255,255,0) 100%)", mixBlendMode: "screen", animation: "crt-sweep 2.6s linear infinite", willChange: "transform"}}></i>
+                <i style={{position: "absolute", inset: "0", background: "radial-gradient(ellipse at 50% 50%, rgba(255,255,255,.08) 0%, rgba(0,0,0,0) 60%, rgba(0,0,0,.35) 100%)", mixBlendMode: "overlay"}}></i>
+              </div>
+              <div data-lens="l" style={{position: "absolute", overflow: "hidden", borderRadius: "30% 26% 38% 34% / 34% 34% 42% 42%", transform: "rotate(15deg) translateZ(0)", pointerEvents: "none", zIndex: "3", left: "57.95%", top: "13.20%", width: "4.55%", height: "2.80%"}}>
+                <i style={{position: "absolute", left: "14%", top: "16%", width: "34%", height: "30%", borderRadius: "50%", background: "radial-gradient(ellipse at 35% 30%,rgba(255,255,255,.22),transparent 70%)", filter: "blur(calc(1.2*var(--u)))", opacity: ".55", animation: "sheen 6.5s ease-in-out infinite"}}></i>
+                <i style={{position: "absolute", top: "-30%", left: "0", width: "44%", height: "160%", background: "linear-gradient(102deg, transparent 0%, rgba(217,200,255,.28) 26%, rgba(255,255,255,.95) 50%, rgba(217,200,255,.28) 74%, transparent 100%)", filter: "blur(calc(1*var(--u)))", transform: "translateX(-170%)", opacity: "0", animation: "glint 3s cubic-bezier(.35,.05,.2,1) infinite"}}></i>
+                <i data-streak="1" style={{position: "absolute", top: "-30%", left: "0", width: "52%", height: "160%", background: "linear-gradient(102deg, transparent 0%, rgba(217,200,255,.22) 26%, rgba(255,255,255,.92) 50%, rgba(217,200,255,.22) 74%, transparent 100%)", filter: "blur(calc(1*var(--u)))", transform: "translateX(-160%)", opacity: "0"}}></i>
+              </div>
+              <div data-lens="r" style={{position: "absolute", overflow: "hidden", borderRadius: "30% 26% 38% 34% / 34% 34% 42% 42%", transform: "rotate(15deg) translateZ(0)", pointerEvents: "none", zIndex: "3", left: "64.75%", top: "14.60%", width: "4.95%", height: "3.30%"}}>
+                <i style={{position: "absolute", left: "14%", top: "16%", width: "34%", height: "30%", borderRadius: "50%", background: "radial-gradient(ellipse at 35% 30%,rgba(255,255,255,.22),transparent 70%)", filter: "blur(calc(1.2*var(--u)))", opacity: ".55", animation: "sheen 6.5s ease-in-out infinite -2.7s"}}></i>
+                <i style={{position: "absolute", top: "-30%", left: "0", width: "44%", height: "160%", background: "linear-gradient(102deg, transparent 0%, rgba(217,200,255,.28) 26%, rgba(255,255,255,.95) 50%, rgba(217,200,255,.28) 74%, transparent 100%)", filter: "blur(calc(1*var(--u)))", transform: "translateX(-170%)", opacity: "0", animation: "glint 3s cubic-bezier(.35,.05,.2,1) .14s infinite"}}></i>
+                <i data-streak="1" style={{position: "absolute", top: "-30%", left: "0", width: "52%", height: "160%", background: "linear-gradient(102deg, transparent 0%, rgba(217,200,255,.22) 26%, rgba(255,255,255,.92) 50%, rgba(217,200,255,.22) 74%, transparent 100%)", filter: "blur(calc(1*var(--u)))", transform: "translateX(-160%)", opacity: "0"}}></i>
+              </div>
+            </div>
+            <div data-par="-28" style={{flex: "1", minWidth: "0", maxWidth: "calc(400*var(--u))", transform: "translateY(var(--ty,0px))", willChange: "transform"}}>
+              <h2 data-reveal="1" style={{margin: "0", fontWeight: "700", fontSize: "calc(40*var(--tu))", lineHeight: "calc(40*var(--tu))", textTransform: "uppercase", color: "#fff", letterSpacing: "calc(-.4*var(--u))"}}>Discutons de<br /><em style={{fontStyle: "normal", color: "var(--violet-b)"}}>votre projet</em></h2>
+              <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13*var(--tu))", lineHeight: "calc(19.5*var(--tu))", color: "#A2A4A9"}}>Vous avez un projet, une envie ou simplement une idée qui mérite d’être explorée ? On peut commencer par en parler, sans brief compliqué ni grand discours. Le reste viendra ensuite.</p>
+              <form data-form="1" noValidate={true} onSubmit={this.handleSubmit} style={{marginTop: "calc(22*var(--u))", display: "flex", flexDirection: "column", gap: "calc(14*var(--u))"}}>
+                <div data-reveal="1" style={{display: "flex", gap: "calc(18*var(--u))"}}>
+                  <input type="text" name="nom" placeholder="Nom" autoComplete="family-name" style={{flex: "1", minWidth: "0", width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
+                  <input type="text" name="prenom" placeholder="Prénom" autoComplete="given-name" style={{flex: "1", minWidth: "0", width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
+                </div>
+                <input data-reveal="1" type="email" name="email" placeholder="Email" autoComplete="email" style={{width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
+                <input data-reveal="1" type="text" name="sujet" placeholder="Sujet" style={{width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
+                <textarea data-reveal="1" name="message" placeholder="Votre message" rows="3" style={{width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", height: "calc(68*var(--u))", padding: "calc(4*var(--u)) 0 calc(8*var(--u))", lineHeight: "calc(22*var(--tu))", resize: "vertical", transition: "border-color .35s ease"}}></textarea>
+                <button data-reveal="1" type="submit" data-magnetic="1" style={{display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "calc(11*var(--u))", width: "100%", height: "calc(44*var(--u))", marginTop: "calc(6*var(--u))", background: "linear-gradient(90deg,var(--pink) 0%,#FF3D8F 100%)", borderRadius: "calc(6*var(--u))", color: "#fff", fontSize: "calc(12*var(--tu))", fontWeight: "600", letterSpacing: "calc(.8*var(--u))", textTransform: "uppercase", transform: "translate(var(--mx,0px),var(--my,0px))", transition: "transform .35s cubic-bezier(.16,1,.3,1), background .25s ease"}}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true" style={{width: "calc(17*var(--u))", height: "calc(17*var(--u))", fill: "#fff"}}><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"></path></svg>
+                  Envoyer
+                </button>
+                <p data-formmsg="1" role="status" aria-live="polite" style={{margin: "0", minHeight: "calc(18*var(--u))", fontSize: "calc(12*var(--tu))", color: "var(--pink-b)"}}></p>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <footer style={{position: "relative", background: "#000", borderTop: "1px solid rgba(255,255,255,.07)"}}>
+          <div style={{width: "calc(1024*var(--u))", maxWidth: "100%", margin: "0 auto", boxSizing: "border-box", padding: "calc(30*var(--u)) calc(82*var(--u))", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "calc(12*var(--u)) calc(32*var(--u))"}}>
+            <p style={{margin: "0", fontSize: "max(calc(11*var(--tu)),9px)", lineHeight: "calc(18*var(--tu))", letterSpacing: "calc(.2*var(--u))", color: "#6A6C71"}}>© 2026 Pixovery — Tous droits réservés.</p>
+            <p data-legal="1" style={{margin: "0", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "calc(4*var(--u)) calc(12*var(--u))", fontSize: "max(calc(11*var(--tu)),9px)", lineHeight: "calc(18*var(--tu))", letterSpacing: "calc(.2*var(--u))"}}>
+              <a>Mentions légales</a>
+              <span aria-hidden="true" style={{color: "rgba(255,255,255,.20)"}}>·</span>
+              <a>Politique de confidentialité</a>
+            </p>
+          </div>
+        </footer>
+      </div>
+    );
+  }
+}
