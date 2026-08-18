@@ -1,0 +1,37 @@
+# --- dependances et build -------------------------------------------
+node_modules/
+dist/
+.vite/
+
+# --- dossiers de travail, jamais versionnes -------------------------
+_to_delete/
+uploads/
+screenshots/
+/assets/
+
+# --- anciennes versions du site, lourdes et mortes ------------------
+# "Pixovery Website.html" fait 6,6 Mo a lui seul. Aucune ne doit partir
+# sur GitHub : le site vivant est dans pixovery-app/.
+#
+# ATTENTION : ces motifs sont ancres par un / initial, EXPRES. Sans lui,
+# Git les applique a TOUS les niveaux : "index.html" bloquait aussi
+# pixovery-app/index.html (le point d'entree du build, sans lequel Vite
+# echoue) et "assets/" bloquait pixovery-app/public/assets/ (toutes les
+# images et polices du site). Ne retire pas les /.
+/Pixovery Website.html
+/Pixovery-standalone.html
+/*.dc.html
+/lego-test.html
+/test-allumage.html
+/index.html
+/support.js
+/hero.webp
+/.thumbnail
+
+# --- sorties temporaires --------------------------------------------
+_git.txt
+*.log
+
+# --- systeme ---------------------------------------------------------
+.DS_Store
+Thumbs.db
