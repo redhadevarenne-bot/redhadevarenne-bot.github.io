@@ -172,6 +172,22 @@ export default class PixoveryPage extends React.Component {
   }
 
   componentDidMount(){
+    /* ?motion=full est lu une dizaine de fois dans ce fichier, mais la CSS,
+       elle, n'en sait rien : une @media (prefers-reduced-motion) s'applique
+       quoi qu'on demande dans l'URL. Sur cette machine, ou « reduire les
+       animations » est actif en permanence, les reflets de lunettes restaient
+       donc figes meme en ?motion=full. On pose la reponse sur <html> pour que
+       la CSS puisse s'effacer devant. */
+    if(/[?&]motion=full/.test(window.location.search))
+      document.documentElement.setAttribute('data-motion', 'full');
+
+    /* ?verres : aide de calage. Dessine les deux boites de reflet en vert
+       par-dessus la figurine, sans animation ni masque. Une capture suffit
+       alors a dire si elles tombent sur les verres ou a cote — mesurer la
+       planche ne dit rien de ce que le navigateur affiche vraiment. */
+    if(/[?&]verres/.test(window.location.search))
+      document.documentElement.setAttribute('data-verres', '1');
+
     /* en premier : les methodes suivantes testent this.lenis */
     this.smoothScroll();
     this.applyProps();
@@ -183,6 +199,7 @@ export default class PixoveryPage extends React.Component {
     this.reveals();
     this.intro();
     this.parallax();
+    this.scanHero();
     this.rhythmSetup();
     this.spin();
     this.services();
@@ -873,9 +890,13 @@ export default class PixoveryPage extends React.Component {
        le halo s'allume a cote du personnage dans l'un des deux etats. */
     const BULB_REPOS  = ['49%', '40%'];
     const BULB_SURVOL = ['53.3%', '11%'];
-    /* hero : bras levé, ampoule, verres décalés */
+    /* hero : bras levé, ampoule, verres décalés.
+       Coupé le 20 août 2026 : le nouveau personnage n'a pas de pose « ampoule
+       levée ». Repasser SURVOL_AMPOULE à true le jour où hero-cut-b existe
+       pour lui — le reste du code est intact. */
+    const SURVOL_AMPOULE = false;
     const hv = this.q('[data-herovisual]');
-    if(hv){
+    if(hv && SURVOL_AMPOULE){
       const a = hv.querySelector('[data-ch="a"]'), b = hv.querySelector('[data-ch="b"]');
       const bulb = hv.querySelector('[data-bulb]');
       const ll = hv.querySelector('[data-lens="l"]'), lr = hv.querySelector('[data-lens="r"]');
@@ -1433,8 +1454,14 @@ export default class PixoveryPage extends React.Component {
           /* chaque lettre a son ecart et son angle propres : ca se range
              comme des briques, pas comme une vague reguliere */
           const r = Math.sin(li * 13 + k * 7.3);
-          s.dataset.dy = (-42 - Math.abs(r) * 58).toFixed(0);
-          s.dataset.dr = (r * 9).toFixed(1);
+          /* Chute depuis le plafond : la lettre part environ trois hauteurs
+             de ligne au-dessus de sa place. Au-dela, elle sortirait du hero
+             par le haut et passerait devant le header. */
+          s.dataset.dy = (-290 - Math.abs(r) * 90).toFixed(0);
+          /* Elle tourne sur elle-meme pendant la chute : un tour et demi,
+             un sens sur deux, avec assez d'irregularite pour que les lettres
+             ne battent pas la mesure ensemble. */
+          s.dataset.dr = ((k % 2 ? 1 : -1) * (540 + Math.abs(r) * 200)).toFixed(0);
           s.dataset.dl = (li * 0.09 + k * 0.032 + Math.abs(r) * 0.05).toFixed(3);
           frag.appendChild(s); lettres.push(s); k++;
         });
@@ -1478,8 +1505,32 @@ export default class PixoveryPage extends React.Component {
        construit la moindre timeline. Le seuil est volontairement bas :
        quelques pixels de restitution suffisent a dire « on n'arrive pas
        par le haut ». */
-    const yInitial = window.scrollY || document.documentElement.scrollTop || 0;
-    if(yInitial > 4){
+    /* ?intro force la sequence d'entree meme si le navigateur a restitue une
+       position de defilement. On travaille la chute des lettres en scrollant
+       sans arret pour juger le hero : sans ce parametre, il faut remonter tout
+       en haut avant chaque F5, et on croit l'animation disparue. La suite se
+       charge du reste — elle rembobine elle-meme la page en haut.
+       Aucun effet pour un visiteur qui n'ajoute pas le parametre. */
+    const forceIntro = /[?&]intro\b/.test(window.location.search);
+
+    /* LE SEUIL. Il valait 4 px : le moindre pixel restitue et la sequence
+       sautait. En pratique on passe son temps a scroller dans le hero pour
+       juger la rotation, donc elle ne se jouait plus jamais — on la croyait
+       cassee.
+       Ce que la regle veut vraiment dire, c'est « ne rembobine pas quelqu'un
+       qui etait ailleurs ». Tant qu'on est encore DANS la piste du hero, on
+       n'est pas ailleurs : remonter en haut de sa propre section ne desoriente
+       personne. Le seuil est donc le bout de la piste, l'instant ou le hero se
+       decolle. Rouvrir le site sur Services ou sur Contact saute toujours
+       l'intro, ce qui etait le but. */
+    const pisteHero = this.q('[data-heropiste]');
+    const seuil = pisteHero
+      ? Math.max(4, pisteHero.offsetHeight - window.innerHeight)
+      : 4;
+    const yInitial = forceIntro
+      ? 0
+      : (window.scrollY || document.documentElement.scrollTop || 0);
+    if(yInitial > seuil){
       open();
       if(intro) intro.style.display = 'none';
       return;
@@ -1686,7 +1737,14 @@ export default class PixoveryPage extends React.Component {
        l'intro d'origine reprend a l'identique. */
     const veil = this.q('[data-lightveil]'), warm = this.q('[data-lightwarm]');
     const heroCam = this.q('[data-hero]'), RACINE = document.documentElement;
-    const LUM = (veil && warm && bulb && heroCam && !reduced) ? 1.05 : 0;
+    /* L'ALLUMAGE EST COUPE. Il tenait a l'ancien personnage, qui tenait une
+       ampoule des la premiere image : c'est elle qui allumait la scene. Le
+       nouveau perso arrive les bras baisses et ne leve son ampoule qu'a la
+       fin de la rotation — l'allumage n'aurait plus rien a allumer.
+       Le code est intact, il suffit de repasser ALLUMAGE a true. Le commentaire
+       plus bas le dit : a LUM = 0, toute la sequence disparait proprement. */
+    const ALLUMAGE = false;
+    const LUM = (ALLUMAGE && veil && warm && bulb && heroCam && !reduced) ? 1.05 : 0;
 
     tl.addLabel('ouverture', 'seuil+=' + (noLoader ? 0 : 0.25 * D));
 
@@ -1825,21 +1883,69 @@ export default class PixoveryPage extends React.Component {
     const lettres = this.splitTitle();
     if(lettres.length){
       const masques = lines.map(l => l.parentElement).filter(Boolean);
+      /* On ouvre les masques de ligne pour laisser passer les lettres, mais
+         il faut alors refermer quelque part : sans ca une lettre qui tombe
+         de 300 % sort du hero par le haut et passe devant le header. Le
+         hero se clippe donc le temps de la sequence, et se rouvre apres. */
+      const heroBox = this.q('[data-hero]');
       tl.add(() => {
+        if(heroBox){
+          if(heroBox.dataset.ov === undefined) heroBox.dataset.ov = heroBox.style.overflow || '';
+          heroBox.style.overflow = 'hidden';
+        }
         lines.forEach(l => { l.style.transform = 'none'; });
         masques.forEach(m => {
           if(m.dataset.ov === undefined) m.dataset.ov = m.style.overflow || '';
           m.style.overflow = 'visible';
         });
       }, 'scene');
-      tl.fromTo(lettres,
-        { yPercent: (i, t) => +t.dataset.dy, rotation: (i, t) => +t.dataset.dr,
-          scale: 0.86, opacity: 0, y: 0 },
-        { yPercent: 0, rotation: 0, scale: 1, opacity: 1, y: 0,
-          duration: 0.82 * D, ease: 'back.out(1.35)',
-          delay: (i, t) => +t.dataset.dl * D },
-        'scene');
-      tl.add(() => { masques.forEach(m => { m.style.overflow = m.dataset.ov; }); });
+      /* Deux regles apprises au banc d'essai (hero-titre-v1.html) :
+
+         1. Une chute ACCELERE, donc l'ease est un "in". L'ancien
+            back.out(1.35) decelerait : ca se lit comme une arrivee en
+            douceur, pas comme une chute.
+         2. La lettre reste PLEINE pendant tout le trajet. On la revele d'un
+            coup a son depart avec un set(), jamais par un fondu : une lettre
+            qui s'eclaircit en tombant se lit comme un fantome.
+
+         Et surtout, on boucle lettre par lettre au lieu d'un seul fromTo
+         avec stagger. Mesure faite : avec un stagger, les cibles dont le
+         sous-tween n'a pas encore demarre se rendent a leur valeur FINALE
+         (opacites relevees 0,1,1,1,1... au temps 0). Un seul fromTo ne peut
+         donc pas les garder cachees avant leur tour. */
+      /* Masquage immediat, des la construction. L'ancien fromTo portait
+         opacity:0 et le rendait tout de suite (immediateRender). Maintenant
+         que l'opacite passe par des set() places sur la timeline, plus rien
+         ne cache les lettres avant que la tete de lecture atteigne 'scene' :
+         le titre s'afficherait en clair par-dessus le loader. */
+      gsap.set(lettres, { opacity: 0 });
+
+      lettres.forEach((c) => {
+        const dep = +c.dataset.dl * D;
+        const dur = 0.52 * D;
+        const t0  = 'scene+=' + dep.toFixed(3);
+        /* pas de masquage pour une lettre qui part a zero : les deux set()
+           tomberaient au meme instant et le dernier ajoute l'emporterait */
+        if(dep > 0.001) tl.set(c, { opacity: 0 }, 'scene');
+        tl.set(c, { opacity: 1 }, t0);
+        tl.fromTo(c,
+          { yPercent: +c.dataset.dy * M, rotation: +c.dataset.dr, scale: 1, y: 0 },
+          { yPercent: 0, rotation: 0, scale: 1, y: 0,
+            duration: dur, ease: 'power2.in' },
+          t0);
+        /* l'ecrasement a l'atterrissage : c'est lui qui donne le poids.
+           Coupe en mouvement reduit, ou il n'apporte que de la secousse. */
+        if(!reduced){
+          tl.to(c, { scaleY: 0.74, scaleX: 1.12, duration: 0.06, ease: 'power2.out' },
+                'scene+=' + (dep + dur).toFixed(3));
+          tl.to(c, { scaleY: 1, scaleX: 1, duration: 0.20, ease: 'elastic.out(1,0.45)' },
+                'scene+=' + (dep + dur + 0.06).toFixed(3));
+        }
+      });
+      tl.add(() => {
+        masques.forEach(m => { m.style.overflow = m.dataset.ov; });
+        if(heroBox) heroBox.style.overflow = heroBox.dataset.ov;
+      });
     } else if(lines.length){
       /* repli : si le decoupage n'a pas pu se faire, on garde la montee
          d'origine. y:0 est INDISPENSABLE — GSAP lit le translateY(112%)
@@ -1897,13 +2003,404 @@ export default class PixoveryPage extends React.Component {
     }
     const heroScroll = () => {
       if(!hero) return;
-      const p = Math.min(1, window.scrollY / window.innerHeight);
-      shift = -p * 90;
+      /* Meme course que scanHero : le hero etant colle, se caler sur
+         innerHeight ferait finir la copie des le premier ecran. */
+      const piste = document.querySelector('[data-heropiste]');
+      const course = piste ? Math.max(1, piste.offsetHeight - window.innerHeight)
+                           : window.innerHeight;
+      const p = Math.min(1, window.scrollY / course);
+      /* La copie ne monte plus au scroll. Le hero est colle : le texte
+         glissait vers le haut alors que la piste, elle, ne bougeait pas —
+         on lisait un decrochage, pas un mouvement. Passer MONTEE a 90 pour
+         retrouver l'ancien comportement. */
+      const MONTEE = 0;
+      shift = -p * MONTEE;
       if(hv){ hv.style.setProperty('--sc', (1 - p*.12).toFixed(3)); }
       if(copy){ copy.style.setProperty('--cpy', (cy*-6 + shift).toFixed(2) + 'px'); }
     };
     this.on(window, 'scroll', heroScroll, {passive:true});
     heroScroll();
+  }
+
+  /* Apparition au balayage — séquence 1.
+     Pilotée par la même progression que heroScroll (scrollY / innerHeight),
+     ramenée sur COURSE pour que le personnage soit entièrement matérialisé
+     bien avant que le hero quitte l'écran.
+     N'écrit que --sa --sb --ha --hb --hc --hd --ly --lo --footo --cx --cy --cr
+     sur [data-herovisual]. Aucune de ces variables n'est lue ailleurs, et le
+     transform du hero (--px --py --sc) n'est jamais touché : il reste la
+     propriété de parallax(). Pour tout couper : SCAN_HERO = false. */
+  scanHero(){
+    const SCAN_HERO = true;
+    const hv = this.q('[data-herovisual]');
+    if(!hv || !SCAN_HERO) return;
+
+    const TOP = 0.15, BOT = 0.895, BAND = 0.13, FADE = 0.05;
+    const RAYON  = '11%';         /* halo du curseur, en % du carré du visuel */
+    const cl = (v, a, b) => v < a ? a : (v > b ? b : v);
+    const pct = v => (v * 100).toFixed(3) + '%';
+    /* « Réduire les animations » : on garde la matérialisation, on coupe le
+       glitch, qui est de la secousse pure. */
+    const reduit = !(/[?&]motion=full/.test(window.location.search))
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    /* La piste. Le hero est collé dans [data-heropiste] : la séquence se lit
+       sur la course de cette piste, plus sur le premier écran. Sans repli si
+       la piste manque, on retombe sur l'ancien calage. */
+    const piste = this.q('[data-heropiste]');
+    const course = () => piste
+      ? Math.max(1, piste.offsetHeight - window.innerHeight)
+      : Math.max(1, window.innerHeight * 0.45);
+
+    /* Répartition sur la course, en fractions :
+         0    → 0.16   la figurine naît (fondu ; rien au premier pixel)
+         0.08 → 1      elle tourne, 76 images, jusqu'à l'ampoule levée
+         0.20 → 0.66   le balayage descend et la matérialise */
+    /* FIN : la rotation s'acheve AVANT le bout de la piste. Tout ce qui reste
+       apres est un temps d'arret — la figurine tient sa pose, ampoule levee,
+       et decroche par a-coups pendant qu'on ne bouge pas encore. Sans ca, le
+       hero se decollait au moment precis ou l'ampoule montait : la sequence
+       n'avait pas de fin, elle etait coupee. */
+    const NAIT = 0.13, TOUR0 = 0.06, SCAN_A = 0.16, SCAN_B = 0.52, FIN = 0.62;
+
+    /* Les deux planches : 76 images, 10 colonnes, tuiles 228×352. */
+    const N = 76, COLS = 10, TW = 332, TH = 512;
+    const cvPlein = hv.querySelector('[data-perso="plein"]');
+    const cvFil   = hv.querySelector('[data-perso="fil"]');
+    const cxP = cvPlein ? cvPlein.getContext('2d') : null;
+    const cxF = cvFil   ? cvFil.getContext('2d')   : null;
+
+    /* La tuile ne couvre pas toute la boîte : elle occupe le rectangle mesuré
+       de la figurine dans le repère 1100×1100 de hero-scan-a (x 469→1021,
+       y 142→993). On la dessine à cette place dans un canvas qui, lui, vaut
+       toute la boîte — comme ça les masques --sa/--sb et --ha..--hd, exprimés
+       en pourcentage de la boîte, restent justes au pixel près. */
+    /* CW est la taille de la MEMOIRE du canvas, pas celle de son affichage.
+       Elle valait 550 en dur. Or la boite fait 566*--u, soit jusqu'a 796 px
+       CSS, et davantage en pixels reels sur un ecran a forte densite. La tuile
+       filaire (332 px de large) etait donc REDUITE a 276 px pour entrer dans
+       le canvas (DW = 0,50273 * 550), puis le canvas etait ETIRE a ~400 px CSS
+       par la mise en page. Deux reechantillonnages a la suite, dont un vers le
+       bas : le trait perdait sa definition d'abord, on l'agrandissait ensuite.
+       C'est de la qu'il bavait.
+       On dimensionne maintenant la memoire sur les pixels REELLEMENT affiches :
+       le trait ne traverse plus qu'un seul agrandissement, depuis sa taille
+       native. Les masques --sa/--sb et --ha..--hd sont en pourcentage de la
+       boite, donc ils suivent sans rien changer. */
+    const dpr   = Math.min(window.devicePixelRatio || 1, 2);
+    const boite = (cvPlein && cvPlein.clientWidth) || 796;
+    const CW    = cl(Math.round(boite * dpr), 660, 1600);
+    if(cvPlein){ cvPlein.width = CW; cvPlein.height = CW; }
+    if(cvFil)  { cvFil.width   = CW; cvFil.height   = CW; }
+    if(cxP) cxP.imageSmoothingQuality = 'high';
+    if(cxF) cxF.imageSmoothingQuality = 'high';
+
+    const DX = CW * 0.42636, DY = CW * 0.12909;
+    const DW = CW * 0.50273, DH = CW * 0.77455;
+
+    const plein = new Image(), fil = new Image(), repos = new Image();
+    let pretP = false, pretF = false, vue = -1;
+    /* La planche filaire est stockee en NIVEAUX DE GRIS : l'intensite du trait
+       EST son alpha. En RVBA elle pesait 4 Mo — les traits fins antialiases
+       coutent une fortune en couche alpha ; en gris, 1,5 Mo.
+       On la repeint donc, mais UNE TUILE A LA FOIS et seulement quand l'image
+       change : 170 000 pixels, environ 2 ms. Repeindre la planche entiere au
+       chargement en couterait 13 millions d'un coup, soit une saccade. */
+    const MAG = [250, 45, 185];   /* releve sur la video de reference : #F12FB6 */
+    /* On repeint ET on redurcit le trait, dans le meme passage.
+       La planche a ete REDUITE depuis sa source : un trait de 1 px y est
+       devenu un degrade gris de deux ou trois pixels. Prendre cette intensite
+       telle quelle comme alpha, c'est afficher le degrade — c'est exactement
+       ce qui bave. On lui repasse donc une courbe en S (smoothstep entre BAS
+       et HAUT) : le coeur du trait remonte a 255, la frange retombe a 0, et
+       seule la vraie transition garde des valeurs intermediaires. Le trait
+       reste antialiase, mais sur un pixel au lieu de trois.
+       La courbe est appliquee APRES l'agrandissement, jamais avant : les
+       franges naissent a l'agrandissement, les durcir en amont ne sert a rien.
+       RW est la resolution de travail : la taille affichee, plafonnee a 1,6x
+       la tuile native — au-dela on ne fait que payer des pixels vides. */
+    const RW = Math.max(TW, Math.min(Math.round(DW), Math.round(TW * 1.6)));
+    const RH = Math.round(RW * TH / TW);
+    const BAS = 0.10, HAUT = 0.62;
+    const gribouille = document.createElement('canvas');
+    gribouille.width = RW; gribouille.height = RH;
+    const cxG = gribouille.getContext('2d', { willReadFrequently: true });
+    cxG.imageSmoothingQuality = 'high';
+    const repeins = (sx, sy) => {
+      cxG.clearRect(0, 0, RW, RH);
+      cxG.drawImage(fil, sx, sy, TW, TH, 0, 0, RW, RH);
+      const d = cxG.getImageData(0, 0, RW, RH), px = d.data;
+      for(let k = 0; k < px.length; k += 4){
+        let a = (px[k] / 255 - BAS) / (HAUT - BAS);
+        a = a < 0 ? 0 : a > 1 ? 1 : a;
+        a = a * a * (3 - 2 * a);
+        px[k] = MAG[0]; px[k+1] = MAG[1]; px[k+2] = MAG[2]; px[k+3] = (a * 255) | 0;
+      }
+      cxG.putImageData(d, 0, 0);
+      return gribouille;
+    };
+
+    const dessinePlein = (sx, sy) => {
+      cxP.clearRect(0, 0, CW, CW);
+      cxP.drawImage(plein, sx, sy, TW, TH, DX, DY, DW, DH);
+    };
+
+    /* LA POSE DE REPOS, EN PLEINE DEFINITION.
+       Les tuiles 0 a 16 de la planche filaire sont RIGOUREUSEMENT identiques :
+       la figurine attend, bras baisses, avant que la rotation ne commence. Or
+       c'est la pose qu'on voit au chargement, immobile, le temps qu'on veut —
+       donc celle ou le trait mou se remarque le plus.
+       Elle est servie par un fichier a part, rendu a 996x1536 depuis la source
+       (contre 332x512 dans la planche, soit trois fois moins de definition).
+       Cadre identique a la tuile, verifie par recouvrement : ecart mesure
+       inferieur au demi-pixel.
+       Un fondu de quatre images (17 a 20) rattrape la planche quand la
+       rotation demarre, sinon le passage du net au mou se voit d'un coup. */
+    const REPOS_FIN = 16, REPOS_FONDU = 4;
+    const reposCv = document.createElement('canvas');
+    let pretR = false;
+    const preparerRepos = () => {
+      /* Le repaint magenta est fait UNE FOIS, au chargement : l'image ne
+         change jamais. A 1,5 million de pixels, le faire a chaque rendu
+         couterait une saccade. */
+      const RWr = Math.max(1, Math.min(repos.naturalWidth, Math.round(DW * 1.25)));
+      const RHr = Math.round(RWr * repos.naturalHeight / repos.naturalWidth);
+      reposCv.width = RWr; reposCv.height = RHr;
+      const c = reposCv.getContext('2d', { willReadFrequently: true });
+      c.imageSmoothingQuality = 'high';
+      c.drawImage(repos, 0, 0, RWr, RHr);
+      const d = c.getImageData(0, 0, RWr, RHr), px = d.data;
+      /* courbe plus douce que celle de la planche : ce trait-ci est deja net,
+         on ne fait que retirer le voile de bloom du rendu. */
+      const B = 0.06, H2 = 0.78;
+      for(let k = 0; k < px.length; k += 4){
+        let a = (px[k] / 255 - B) / (H2 - B);
+        a = a < 0 ? 0 : a > 1 ? 1 : a;
+        a = a * a * (3 - 2 * a);
+        px[k] = MAG[0]; px[k+1] = MAG[1]; px[k+2] = MAG[2]; px[k+3] = (a * 255) | 0;
+      }
+      c.putImageData(d, 0, 0);
+      pretR = true;
+    };
+
+    const dessine = f => {
+      const i = cl(Math.round(f), 0, N - 1);
+      if(i === vue) return;
+      vue = i;
+      const sx = (i % COLS) * TW, sy = ((i / COLS) | 0) * TH;
+      if(cxP && pretP) dessinePlein(sx, sy);
+      if(cxF && pretF){
+        cxF.clearRect(0, 0, CW, CW);
+        const w = pretR ? cl((REPOS_FIN + REPOS_FONDU - i) / REPOS_FONDU, 0, 1) : 0;
+        if(w < 1){
+          cxF.globalAlpha = 1 - w;
+          cxF.drawImage(repeins(sx, sy), 0, 0, RW, RH, DX, DY, DW, DH);
+        }
+        if(w > 0){
+          cxF.globalAlpha = w;
+          cxF.drawImage(reposCv, 0, 0, reposCv.width, reposCv.height, DX, DY, DW, DH);
+        }
+        cxF.globalAlpha = 1;
+      }
+    };
+
+    /* --- LE GLITCH ---------------------------------------------------------
+       Une fois la rotation finie, l'ampoule levee, la figurine decroche par
+       a-coups : des tranches horizontales glissent, et deux copies decalees en
+       rouge et en cyan passent par-dessus.
+
+       Deux regles apprises au banc d'essai :
+       - un glitch se lit a ~14 images/seconde, pas a 60. A 60 il devient lisse
+         et cesse de ressembler a une panne. On avance donc par setTimeout.
+       - pas de rAF permanent : rien ne tourne tant qu'on n'est pas au bout de
+         la piste, et tout s'arrete des qu'on remonte. */
+    /* Le glitch remplit le temps d'arret : il demarre des que la rotation est
+       finie et tient jusqu'au bout de la piste. */
+    const GLITCH_A = FIN + 0.02;
+    let horloge = null, prochaine = null, actif = false;
+
+    const glitchImage = () => {
+      if(!cxP || !pretP) return;
+      const i = cl(Math.round(derniere), 0, N - 1);
+      const sx = (i % COLS) * TW, sy = ((i / COLS) | 0) * TH;
+      dessinePlein(sx, sy);
+
+      const n = 5 + ((Math.random() * 4) | 0);
+      for(let b = 0; b < n; b++){
+        const h  = TH * (0.04 + Math.random() * 0.13);
+        const y  = Math.random() * (TH - h);
+        const dxb = (Math.random() - 0.5) * DW * 0.16;
+        cxP.drawImage(plein, sx, sy + y, TW, h,
+                      DX + dxb, DY + y * (DH / TH), DW, h * (DH / TH));
+      }
+      const ec = DW * (0.012 + Math.random() * 0.02);
+      cxP.globalCompositeOperation = 'lighter';
+      cxP.globalAlpha = 0.55;
+      cxP.filter = 'url(#pxRouge)';
+      cxP.drawImage(plein, sx, sy, TW, TH, DX - ec, DY, DW, DH);
+      cxP.filter = 'url(#pxCyan)';
+      cxP.drawImage(plein, sx, sy, TW, TH, DX + ec, DY, DW, DH);
+      cxP.filter = 'none';
+      cxP.globalAlpha = 1;
+      cxP.globalCompositeOperation = 'source-over';
+    };
+
+    const finDeSalve = () => {
+      horloge = null;
+      const i = cl(Math.round(derniere), 0, N - 1);
+      dessinePlein((i % COLS) * TW, ((i / COLS) | 0) * TH);
+      if(actif) prochaine = setTimeout(salve, 900 + Math.random() * 2200);
+    };
+    const salve = () => {
+      if(!actif) return;
+      let reste = 2 + ((Math.random() * 3) | 0);
+      const pas = () => {
+        if(!actif) return;
+        glitchImage();
+        if(--reste > 0) horloge = setTimeout(pas, 70);
+        else horloge = setTimeout(finDeSalve, 70);
+      };
+      pas();
+    };
+    const arreteGlitch = () => {
+      actif = false;
+      if(horloge){ clearTimeout(horloge); horloge = null; }
+      if(prochaine){ clearTimeout(prochaine); prochaine = null; }
+      vue = -1;
+    };
+    this.cleanups.push(arreteGlitch);
+    plein.onload = () => { pretP = true; vue = -1; dessine(derniere); };
+    fil.onload   = () => { pretF = true; vue = -1; dessine(derniere); };
+    /* Noms versionnes : une planche precedente avait des tuiles de 235 px de
+       large. Lue avec TW = 332, elle derive vers la droite d'image en image —
+       c'est exactement le decalage qu'on voyait. Un nom neuf coupe court a
+       tout cache navigateur qui trainerait. */
+    repos.onload = () => { preparerRepos(); vue = -1; dessine(derniere); };
+    plein.src = '/assets/perso-tour-v2.webp';
+    fil.src   = '/assets/perso-filaire-v2.webp';
+    repos.src = '/assets/filaire-repos.webp';
+
+    const sparks = hv.querySelector('[data-scansparks]');
+    if(sparks && !sparks.childElementCount){
+      for(let i = 0; i < 20; i++){
+        const e = document.createElement('i');
+        const t = 2.6 + (i * 7 % 5) * 0.9;
+        e.style.left   = (4 + (i * 37) % 92) + '%';
+        e.style.width  = 'calc(' + t.toFixed(1) + '*var(--u))';
+        e.style.height = 'calc(' + t.toFixed(1) + '*var(--u))';
+        e.style.boxShadow = '0 0 calc(' + (t * 2.6).toFixed(1) + '*var(--u)) calc(' + (t * 0.6).toFixed(1) + '*var(--u)) rgba(255,60,205,.85)';
+        e.style.setProperty('--dx', 'calc(' + (((i * 53) % 17) - 8) + '*var(--u))');
+        e.style.setProperty('--dy', 'calc(' + (-14 - ((i * 29) % 22)) + '*var(--u))');
+        e.style.setProperty('--dur', (1.6 + ((i * 13) % 9) * 0.22).toFixed(2) + 's');
+        e.style.setProperty('--del', '-' + (((i * 17) % 23) * 0.13).toFixed(2) + 's');
+        sparks.appendChild(e);
+      }
+    }
+
+    /* Les poussieres de lumiere autour de l'ampoule. Meme methode que les
+       etincelles du balayage : engendrees une fois, reparties par une suite
+       deterministe plutot qu'au hasard, pour que deux chargements donnent la
+       meme scene. Elles montent, donc --dy est toujours negatif. */
+    const ampoule = hv.querySelector('[data-ampoule]');
+    if(ampoule && !ampoule.childElementCount){
+      /* Deux familles : la poussiere fine, nombreuse et lente, et quelques
+         braises — plus grosses, plus chaudes, elles montent plus vite. Une
+         seule taille donnait une pluie reguliere, qui se lit comme un motif. */
+      for(let i = 0; i < 30; i++){
+        const e = document.createElement('i');
+        const braise = (i % 6 === 1);
+        /* diametre de la BOITE, en --u. Le degrade s'eteint a 74 % du rayon,
+           donc ce qu'on voit fait environ les trois quarts de ces valeurs. */
+        const t = braise ? 2.6 + (i * 7 % 3) * 0.5
+                         : 1.3 + (i * 5 % 4) * 0.32;
+        const ang = (i * 137.5) * Math.PI / 180;        /* angle d'or : ca ne fait pas de paquet */
+        const ray = 10 + (i * 11 % 21);                 /* distance au centre, en % */
+        e.style.left   = (50 + Math.cos(ang) * ray * 0.9).toFixed(1) + '%';
+        e.style.top    = (52 + Math.sin(ang) * ray * 0.7).toFixed(1) + '%';
+        e.style.width  = 'calc(' + t.toFixed(2) + '*var(--u))';
+        e.style.height = 'calc(' + t.toFixed(2) + '*var(--u))';
+        /* un voile de flou propre a chaque particule : plus elle est grosse,
+           plus elle est diffuse. C'est ce qui l'empeche de se lire comme un
+           objet pose sur l'image. */
+        e.style.filter = 'blur(calc(' + (t * 0.34).toFixed(2) + '*var(--u)))';
+        /* la derive laterale change de sens d'une particule a l'autre */
+        e.style.setProperty('--dx', 'calc(' + (((i * 47) % 19) - 9) + '*var(--u))');
+        e.style.setProperty('--dy', 'calc(' + (braise ? -26 - ((i * 31) % 30) : -14 - ((i * 31) % 26)) + '*var(--u))');
+        e.style.setProperty('--dur', (braise ? 2.1 + ((i * 17) % 9) * 0.22
+                                             : 2.9 + ((i * 17) % 13) * 0.28).toFixed(2) + 's');
+        e.style.setProperty('--del', '-' + (((i * 23) % 37) * 0.19).toFixed(2) + 's');
+        ampoule.appendChild(e);
+      }
+    }
+
+    let p = 0, q = 0, derniere = 0;
+    const rendu = () => {
+      const s = hv.style;
+
+      /* Naissance : rien n'est visible au premier pixel. */
+      s.setProperty('--nait', cl(p / NAIT, 0, 1).toFixed(3));
+
+      /* Rotation : elle démarre un peu après la naissance et occupe le reste. */
+      derniere = cl((p - TOUR0) / (FIN - TOUR0), 0, 1) * (N - 1);
+      dessine(derniere);
+
+      /* Balayage : mécanique inchangée, seulement réétalonnée sur la piste. */
+      q = cl((p - SCAN_A) / (SCAN_B - SCAN_A), 0, 1);
+      const line = TOP - BAND - FADE + q * ((BOT + BAND + FADE * 2) - (TOP - BAND - FADE));
+      const sa = cl(line - BAND, 0, 1), sb = cl(line, 0, 1);
+      s.setProperty('--sa', pct(sa));
+      s.setProperty('--sb', pct(sb < sa + 0.001 ? sa + 0.001 : sb));
+      s.setProperty('--ha', pct(cl(line - BAND - FADE, 0, 1)));
+      s.setProperty('--hb', pct(cl(line - BAND, 0, 1)));
+      s.setProperty('--hc', pct(cl(line, 0, 1)));
+      s.setProperty('--hd', pct(cl(line + FADE, 0, 1)));
+      s.setProperty('--ly', pct(cl(line, 0, 1)));
+      /* le trait s'allume en arrivant sur les cheveux et s'éteint avec les
+         pieds, au lieu d'apparaître et de disparaître d'un coup. */
+      const entree = cl(q / 0.10, 0, 1), sortie = cl((1 - q) / 0.16, 0, 1);
+      s.setProperty('--lo', (entree * sortie).toFixed(3));
+      s.setProperty('--footo', String(cl((line - 0.80) / 0.10, 0, 1)));
+      if(q < 0.985) s.setProperty('--cr', '0%');
+
+      /* La pose est tenue : les reflets de lunettes s'allument. */
+      hv.classList.toggle('pose-tenue', p >= FIN);
+
+      /* le glitch ne vit qu'au bout de la piste, ampoule levee */
+      const veut = p >= GLITCH_A && !reduit;
+      if(veut && !actif){ actif = true; prochaine = setTimeout(salve, 260); }
+      else if(!veut && actif){ arreteGlitch(); dessine(derniere); }
+    };
+
+    let file = false;
+    const auScroll = () => {
+      file = false;
+      p = cl((window.scrollY || 0) / course(), 0, 1);
+      rendu();
+    };
+    /* Une seule image par frame : le scroll peut tirer des dizaines
+       d'évènements, on ne redessine qu'une fois. */
+    const queue = () => { if(file) return; file = true; requestAnimationFrame(auScroll); };
+    this.on(window, 'scroll', queue, {passive: true});
+    this.on(window, 'resize', queue, {passive: true});
+    auScroll();
+
+    /* le curseur devient le scanner, une fois le personnage matérialisé */
+    if(window.matchMedia('(pointer:fine)').matches){
+      let attente = null;
+      this.on(window, 'pointermove', e => {
+        if(q < 0.985){ hv.style.setProperty('--cr', '0%'); return; }
+        const r = hv.getBoundingClientRect();
+        const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+        if(x < -0.15 || x > 1.15 || y < -0.15 || y > 1.15){ hv.style.setProperty('--cr', '0%'); return; }
+        if(attente) return;
+        attente = requestAnimationFrame(() => {
+          attente = null;
+          hv.style.setProperty('--cx', (x * 100).toFixed(2) + '%');
+          hv.style.setProperty('--cy', (y * 100).toFixed(2) + '%');
+          hv.style.setProperty('--cr', RAYON);
+        });
+      }, {passive: true});
+    }
   }
 
   rhythmSetup(){
@@ -2026,7 +2523,9 @@ export default class PixoveryPage extends React.Component {
 
         <i data-lightveil="1" aria-hidden="true" style={{position: "fixed", inset: "0", zIndex: "990", pointerEvents: "none", opacity: "0"}}></i>
         <i data-lightwarm="1" aria-hidden="true" style={{position: "fixed", inset: "0", zIndex: "991", pointerEvents: "none", mixBlendMode: "screen", opacity: "0"}}></i>
-        <section id="accueil" data-hero="1" data-screen-label="Hero" style={{height: "100vh", minHeight: "calc(560*var(--u))", position: "relative", background: "#000", scrollMarginTop: "0"}}>
+
+        <div data-heropiste="1">
+        <section id="accueil" data-hero="1" data-screen-label="Hero" style={{height: "100vh", minHeight: "calc(560*var(--u))", background: "#000", scrollMarginTop: "0"}}>
           <i data-plane="1" data-k=".2" aria-hidden="true" style={{position: "absolute", inset: "-14%", pointerEvents: "none", zIndex: "0", filter: "blur(calc(36*var(--u)))", mixBlendMode: "screen", background: "radial-gradient(50% 60% at 71% 47%, rgba(122,1,255,.20) 0%, rgba(122,1,255,.07) 38%, rgba(0,0,0,0) 65%)"}}></i>
           <i data-floor="1" data-plane="1" data-k=".36" aria-hidden="true" style={{position: "absolute", left: "0", right: "0", bottom: "0", height: "46%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(72% 100% at 62% 118%, rgba(122,1,255,.30) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.04) 60%, rgba(0,0,0,0) 82%)"}}></i>
           <i data-floor="2" aria-hidden="true" style={{position: "absolute", left: "0", right: "0", bottom: "0", height: "20%", pointerEvents: "none", zIndex: "0", background: "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,.55) 55%, #000 100%)"}}></i>
@@ -2044,41 +2543,31 @@ export default class PixoveryPage extends React.Component {
               <a href="#portfolio" data-heroline="btn" style={{display: "inline-flex", alignItems: "center", justifyContent: "space-between", background: "linear-gradient(176deg, #F4237E 0%, #E2006B 46%, #CC005F 100%)", color: "#fff", borderRadius: "calc(12*var(--u))", whiteSpace: "nowrap", fontSize: "calc(12*var(--tu))", fontWeight: "600", letterSpacing: "calc(.8*var(--u))", textTransform: "uppercase", marginTop: "calc(38*var(--u))", minWidth: "calc(223*var(--u))", height: "calc(44*var(--u))", padding: "0 calc(24*var(--u))", opacity: "0", transform: "translate(var(--mx,0px),calc(16*var(--u)))", transition: "opacity .9s ease .58s, transform .9s cubic-bezier(.16,1,.3,1) .58s, background .25s ease, box-shadow .3s cubic-bezier(.16,1,.3,1)"}}>Voir mes projets <span style={{marginLeft: "calc(14*var(--u))", fontSize: "calc(13*var(--tu))", lineHeight: "1"}}>→</span></a>
             </div>
 
-            <div data-herovisual="1" style={{position: "absolute", left: "calc(468*var(--u))", top: "50%", width: "calc(492*var(--u))", height: "calc(492*var(--u))", transform: "translate(var(--px,0px), calc(-50% + var(--py,0px))) scale(var(--sc,1))", willChange: "transform"}}>
+            <div data-herovisual="1" style={{position: "absolute", left: "calc(431*var(--u))", top: "50%", width: "calc(566*var(--u))", height: "calc(566*var(--u))", transform: "translate(var(--px,0px), calc(-50% + var(--py,0px))) scale(var(--sc,1))", willChange: "transform"}}>
               <i data-spot="1" data-plane="1" data-k="-.45" aria-hidden="true" style={{position: "absolute", inset: "-25%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(34% 34% at 64.7% 53%, rgba(143,43,255,.22) 0%, rgba(122,1,255,.11) 36%, rgba(122,1,255,.04) 60%, rgba(0,0,0,0) 80%)", filter: "blur(calc(22*var(--u)))"}}></i>
             <i data-ground="1" aria-hidden="true" style={{position: "absolute", left: "-24%", right: "-24%", top: "84%", height: "42%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(46% 44% at 50% 22%, rgba(158,74,255,.24) 0%, rgba(126,10,255,.11) 40%, rgba(122,1,255,.035) 64%, rgba(0,0,0,0) 82%)", filter: "blur(calc(18*var(--u)))"}}></i>
             <i data-shade="pot-soft" aria-hidden="true" style={{position: "absolute", left: "1%", top: "86.4%", width: "44%", height: "7.8%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.50) 0%, rgba(0,0,0,.27) 42%, rgba(0,0,0,.11) 64%, rgba(0,0,0,0) 80%)", filter: "blur(calc(9*var(--u)))"}}></i>
             <i data-shade="feet-soft" aria-hidden="true" style={{position: "absolute", left: "48.5%", top: "86.6%", width: "38%", height: "7.4%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.50) 0%, rgba(0,0,0,.27) 42%, rgba(0,0,0,.11) 64%, rgba(0,0,0,0) 80%)", filter: "blur(calc(8*var(--u)))"}}></i>
             <i data-shade="pot-core" aria-hidden="true" style={{position: "absolute", left: "8.5%", top: "87.5%", width: "29%", height: "3.4%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.66) 0%, rgba(0,0,0,.34) 45%, rgba(0,0,0,0) 78%)", filter: "blur(calc(4*var(--u)))"}}></i>
             <i data-shade="feet-core" aria-hidden="true" style={{position: "absolute", left: "55.5%", top: "87.7%", width: "24%", height: "3.2%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.66) 0%, rgba(0,0,0,.34) 45%, rgba(0,0,0,0) 78%)", filter: "blur(calc(3.5*var(--u)))"}}></i>
-              <img data-ch="a" src="/assets/hero-cut-a.webp" alt="Pixovery — la figurine de Redha Devarenne et son pot à crayons" style={{position: "absolute", inset: "0", width: "100%", height: "100%", transition: "opacity .45s ease"}} width="1100" height="1100" decoding="async" fetchPriority="high" />
-              <img data-ch="b" src="/assets/hero-cut-b.webp" alt="" style={{position: "absolute", inset: "0", width: "100%", height: "100%", opacity: "0", transition: "opacity .45s ease"}} width="1100" height="1100" decoding="async" />
-              <span data-bulb="1" style={{position: "absolute", left: "49%", top: "40%", width: "42%", height: "42%", transform: "translate(-50%,-50%)", pointerEvents: "none", borderRadius: "50%", background: "radial-gradient(circle,rgba(255,168,60,.55) 0%,rgba(255,140,30,.22) 40%,rgba(255,130,20,0) 70%)", opacity: "0", transition: "opacity .45s ease, left .45s ease, top .45s ease"}}>
-                <i data-spark="1" style={{position: "absolute", left: "28%", top: "34%", width: "calc(5.1*var(--u))", height: "calc(5.1*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(12.2*var(--u)) calc(3.1*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(-9*var(--u))", "--dy": "calc(-30*var(--u))", animation: "spark 3.9s ease-in-out -0.4s infinite"}}></i>
-                <i data-spark="1" style={{position: "absolute", left: "68%", top: "28%", width: "calc(4.3*var(--u))", height: "calc(4.3*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(10.3*var(--u)) calc(2.6*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(7*var(--u))", "--dy": "calc(-26*var(--u))", animation: "spark 4.4s ease-in-out -1.9s infinite"}}></i>
-                <i data-spark="1" style={{position: "absolute", left: "50%", top: "17%", width: "calc(5.7*var(--u))", height: "calc(5.7*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(13.7*var(--u)) calc(3.4*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(-3*var(--u))", "--dy": "calc(-32*var(--u))", animation: "spark 3.4s ease-in-out -2.8s infinite"}}></i>
-                <i data-spark="1" style={{position: "absolute", left: "22%", top: "56%", width: "calc(4.7*var(--u))", height: "calc(4.7*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(11.3*var(--u)) calc(2.8*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(-8*var(--u))", "--dy": "calc(-27*var(--u))", animation: "spark 4.1s ease-in-out -0.9s infinite"}}></i>
-                <i data-spark="1" style={{position: "absolute", left: "76%", top: "52%", width: "calc(5.2*var(--u))", height: "calc(5.2*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(12.5*var(--u)) calc(3.1*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(9*var(--u))", "--dy": "calc(-29*var(--u))", animation: "spark 3.7s ease-in-out -3.3s infinite"}}></i>
-                <i data-spark="1" style={{position: "absolute", left: "38%", top: "20%", width: "calc(3.9*var(--u))", height: "calc(3.9*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(9.4*var(--u)) calc(2.3*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(-5*var(--u))", "--dy": "calc(-24*var(--u))", animation: "spark 4.6s ease-in-out -1.4s infinite"}}></i>
-                <i data-spark="1" style={{position: "absolute", left: "64%", top: "70%", width: "calc(4.8*var(--u))", height: "calc(4.8*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(11.5*var(--u)) calc(2.9*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(6*var(--u))", "--dy": "calc(-31*var(--u))", animation: "spark 3.6s ease-in-out -2.3s infinite"}}></i>
-                <i data-spark="1" style={{position: "absolute", left: "33%", top: "71%", width: "calc(4.2*var(--u))", height: "calc(4.2*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(10.1*var(--u)) calc(2.5*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(-7*var(--u))", "--dy": "calc(-25*var(--u))", animation: "spark 4.3s ease-in-out -3.8s infinite"}}></i>
-                <i data-spark="1" style={{position: "absolute", left: "72%", top: "38%", width: "calc(5.4*var(--u))", height: "calc(5.4*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(13.0*var(--u)) calc(3.2*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(8*var(--u))", "--dy": "calc(-28*var(--u))", animation: "spark 3.2s ease-in-out -1.1s infinite"}}></i>
-                <i data-spark="1" style={{position: "absolute", left: "48%", top: "77%", width: "calc(4.5*var(--u))", height: "calc(4.5*var(--u))", borderRadius: "50%", background: "#FFE6C2", boxShadow: "0 0 calc(10.8*var(--u)) calc(2.7*var(--u)) rgba(255,175,70,.85)", "--dx": "calc(-4*var(--u))", "--dy": "calc(-33*var(--u))", animation: "spark 4.0s ease-in-out -2.6s infinite"}}></i>
-              </span>
-              <div data-lens="l" style={{position: "absolute", overflow: "hidden", borderRadius: "30% 26% 38% 34% / 34% 34% 42% 42%", transform: "rotate(-3deg) translateZ(0)", pointerEvents: "none", zIndex: "3", left: "59.90%", top: "30.80%", width: "6.30%", height: "4.70%", transition: "left .45s ease, top .45s ease"}}>
-                <i style={{position: "absolute", left: "14%", top: "16%", width: "34%", height: "30%", borderRadius: "50%", background: "radial-gradient(ellipse at 35% 30%,rgba(255,255,255,.22),transparent 70%)", filter: "blur(calc(1.2*var(--u)))", opacity: ".55", animation: "sheen 6.5s ease-in-out infinite"}}></i>
-                <i style={{position: "absolute", top: "-30%", left: "0", width: "44%", height: "160%", background: "linear-gradient(102deg, transparent 0%, rgba(217,200,255,.28) 26%, rgba(255,255,255,.95) 50%, rgba(217,200,255,.28) 74%, transparent 100%)", filter: "blur(calc(1*var(--u)))", transform: "translateX(-170%)", opacity: "0", animation: "glint 3s cubic-bezier(.35,.05,.2,1) infinite"}}></i>
-                <i data-streak="1" style={{position: "absolute", top: "-30%", left: "0", width: "52%", height: "160%", background: "linear-gradient(102deg, transparent 0%, rgba(217,200,255,.22) 26%, rgba(255,255,255,.92) 50%, rgba(217,200,255,.22) 74%, transparent 100%)", filter: "blur(calc(1*var(--u)))", transform: "translateX(-160%)", opacity: "0"}}></i>
-              </div>
-              <div data-lens="r" style={{position: "absolute", overflow: "hidden", borderRadius: "30% 26% 38% 34% / 34% 34% 42% 42%", transform: "rotate(-3deg) translateZ(0)", pointerEvents: "none", zIndex: "3", left: "68.20%", top: "30.80%", width: "6.20%", height: "4.60%", transition: "left .45s ease, top .45s ease"}}>
-                <i style={{position: "absolute", left: "14%", top: "16%", width: "34%", height: "30%", borderRadius: "50%", background: "radial-gradient(ellipse at 35% 30%,rgba(255,255,255,.22),transparent 70%)", filter: "blur(calc(1.2*var(--u)))", opacity: ".55", animation: "sheen 6.5s ease-in-out infinite -2.7s"}}></i>
-                <i style={{position: "absolute", top: "-30%", left: "0", width: "44%", height: "160%", background: "linear-gradient(102deg, transparent 0%, rgba(217,200,255,.28) 26%, rgba(255,255,255,.95) 50%, rgba(217,200,255,.28) 74%, transparent 100%)", filter: "blur(calc(1*var(--u)))", transform: "translateX(-170%)", opacity: "0", animation: "glint 3s cubic-bezier(.35,.05,.2,1) .14s infinite"}}></i>
-                <i data-streak="1" style={{position: "absolute", top: "-30%", left: "0", width: "52%", height: "160%", background: "linear-gradient(102deg, transparent 0%, rgba(217,200,255,.22) 26%, rgba(255,255,255,.92) 50%, rgba(217,200,255,.22) 74%, transparent 100%)", filter: "blur(calc(1*var(--u)))", transform: "translateX(-160%)", opacity: "0"}}></i>
-              </div>
+              <img className="potSolide" src="/assets/pot-solide.webp" alt="" width="1100" height="1100" decoding="async" fetchpriority="high" />
+              <canvas data-ch="a" data-perso="plein" className="scanSolid" width="550" height="550" role="img" aria-label="Pixovery — la figurine de Redha Devarenne et son pot à crayons"></canvas>
+              <div className="scanWrap" aria-hidden="true"><canvas className="scanWire" data-perso="fil" width="550" height="550"></canvas><i className="scanGrid"></i></div>
+              <svg width="0" height="0" aria-hidden="true" style={{position: "absolute"}}>
+                <filter id="pxRouge" colorInterpolationFilters="sRGB"><feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" /></filter>
+                <filter id="pxCyan"  colorInterpolationFilters="sRGB"><feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" /></filter>
+              </svg>
+              <i className="scanSparks" data-scansparks="1" aria-hidden="true"></i>
+              <i className="scanLineGlow" aria-hidden="true"></i>
+              <i className="scanLine" aria-hidden="true"></i>
+              <i data-verre="g" aria-hidden="true"></i>
+              <i data-verre="d" aria-hidden="true"></i>
+              <i data-ampoule="1" aria-hidden="true"></i>
             </div>
 
           </div>
         </section>
+        </div>
 
         <section id="services" data-screen-label="Services" data-piste="services" style={{position: "relative", background: "#000", height: "400vh", scrollMarginTop: "0"}}>
           <div data-colle="1" style={{position: "sticky", top: "0", height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "center"}}>

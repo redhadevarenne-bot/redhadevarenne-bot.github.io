@@ -327,9 +327,280 @@ input,textarea{font:inherit}
     at calc(var(--lum-x) + var(--cam-x,0px)) calc(var(--lum-y) + var(--cam-y,0px)),
     rgba(255,183,92,.22) 0%, rgba(255,146,42,.10) 46%, rgba(255,130,20,0) 74%);
 }
+/* La piste du hero. Le hero y est COLLE : il tient l'ecran pendant toute la
+   sequence (apparition, rotation, materialisation) au lieu de la jouer en un
+   seul ecran de defilement, ou la moitie passerait hors champ.
+   --piste-hero est la longueur de defilement EN PLUS du premier ecran. */
+[data-heropiste]{
+  position:relative;
+  height:calc(100vh + var(--piste-hero, 300vh));
+}
 [data-hero]{
+  position:sticky; top:0;
   transform-origin:var(--cam-ox,50%) var(--cam-oy,50%);
   transform:translate(var(--cam-x,0px),var(--cam-y,0px)) scale(var(--cam-z,1));
+}
+/* Le pot ne se virtualise jamais : il est hors des calques masques, donc le
+   balayage ne l'atteint pas. Seule la figurine se materialise. */
+.potSolide{
+  position:absolute;inset:0;width:100%;height:100%;
+  object-fit:contain;display:block;z-index:0;pointer-events:none;
+}
+/* La naissance : --nait passe de 0 a 1 sur le debut de la piste. Rien n'est
+   visible au premier pixel. Ecrit par scanHero() sur [data-herovisual]. */
+.potSolide, canvas.scanSolid, .scanWrap{ opacity:var(--nait, 1); }
+
+/* LES REFLETS DE LUNETTES.
+   Ils n'apparaissent qu'une fois le defilement de la piste termine, quand la
+   figurine tient sa pose. Positions mesurees sur la derniere image de la
+   rotation, en pourcentage de la boite du visuel : les verres gauche et droit
+   n'ont pas la meme largeur, la tete est vue de trois quarts.
+
+   Trois couches, parce qu'un simple balayage ne se lit pas comme un reflet :
+   - ::before  un point speculaire permanent, qui donne le verre
+   - ::after   le lustre qui traverse — c'est LUI qui fait « ca brille ».
+   Une troisieme couche a existe (un halo qui debordait au passage) : elle est
+   supprimee, voir plus bas pourquoi. */
+[data-verre]{
+  position:absolute;z-index:4;pointer-events:none;overflow:hidden;
+  border-radius:34% 30% 40% 36% / 38% 38% 44% 44%;
+  opacity:0;transition:opacity .55s ease;
+  /* LE MASQUE QUI SUPPRIME LE CONTOUR.
+     `overflow:hidden` coupe le lustre NET au bord de la boite. On voyait donc
+     la boite : un rectangle arrondi qui n'est pas la forme du verre, et que le
+     regard attrape immediatement — un reflet n'a pas de bord franc, il s'eteint.
+     Le masque fait mourir les deux couches avant d'atteindre ce bord. Il reste
+     du contraste au centre (noir plein jusqu'a 38 %) et plus rien au pourtour,
+     donc la forme exacte de la boite cesse d'etre lisible. */
+  -webkit-mask-image:radial-gradient(ellipse 96% 92% at 50% 48%, #000 0%, #000 38%, rgba(0,0,0,.62) 66%, rgba(0,0,0,.18) 86%, rgba(0,0,0,0) 100%);
+          mask-image:radial-gradient(ellipse 96% 92% at 50% 48%, #000 0%, #000 38%, rgba(0,0,0,.62) 66%, rgba(0,0,0,.18) 86%, rgba(0,0,0,0) 100%);
+}
+/* Calage refait a la mesure sur la tuile 75 de perso-tour-v2.webp — la pose
+   que la figurine tient a l'arret.
+
+   Methode : sur les lignes stables du visage (y 138 a 148), on releve les
+   plages sombres. Le VERRE se distingue de la MONTURE parce que la monture
+   est noire franche et que le verre garde un degrade (45 -> 0). Plages
+   retenues, en pixels de tuile : gauche x[115-155], droit x[168-218], toutes
+   deux y[126-151]. Elles sont volontairement RENTREES de deux pixels dans le
+   verre : le lustre du ::after est clippe par la boite, donc une boite trop
+   large le fait deborder sur la joue.
+
+   Conversion en pourcentage de la boite, puisque la tuile y est dessinee a
+   DX/DY/DW/DH :
+     left = 42,636 + x/332 * 50,273      top = 12,909 + y/512 * 77,455
+
+   Pourquoi l'ancien calage etait faux : il datait de la planche precedente.
+   Les chiffres disaient verre gauche plus LARGE que le droit (7,87 contre
+   5,76) ; sur cette planche-ci c'est l'inverse, la tete est tournee dans
+   l'autre sens. Le reflet droit tombait donc a cheval sur l'arcade. */
+[data-verre="g"]{ left:60.05%; top:32.27%; width:6.06%; height:3.48%; }
+[data-verre="d"]{ left:68.08%; top:31.97%; width:7.57%; height:3.48%; }
+
+/* AIDE DE CALAGE — ?verres.
+   Les deux boites apparaissent en vert par-dessus la figurine, sans masque,
+   sans animation, quelle que soit la position dans la piste. C'est le seul
+   moyen de savoir si le decalage vient du CALAGE (la boite tombe a cote du
+   verre) ou de l'ANIMATION (la boite est juste, mais ce qui la traverse se lit
+   mal). Mesurer la planche ne repond pas a cette question : elle dit ou est le
+   verre dans l'image, pas ou le navigateur pose la boite.
+   Rien de tout ceci n'existe sans le parametre dans l'URL. */
+html[data-verres] [data-verre]{
+  opacity:1 !important; animation:none !important;
+  background:rgba(0,255,120,.30) !important;
+  outline:1px solid #00ff78;
+  -webkit-mask-image:none !important; mask-image:none !important;
+}
+html[data-verres] [data-verre]::before,
+html[data-verres] [data-verre]::after{ display:none !important }
+
+/* Le point speculaire permanent. Resserre : le verre ne fait que ~48 x 28 px a
+   l'ecran, une tache de 62 % de large y est une flaque, pas un reflet. */
+[data-verre]::before{
+  content:"";position:absolute;inset:0;
+  background:radial-gradient(ellipse 46% 54% at 28% 24%,
+    rgba(255,255,255,.55) 0%, rgba(226,208,255,.16) 46%, rgba(255,255,255,0) 72%);
+  opacity:.22;
+}
+/* LE LUSTRE. Sa largeur est passee de 58 % a 16 %.
+   A 58 %, la bande couvrait la moitie du verre : au sommet de la traversee on
+   ne lisait pas un reflet qui glisse mais un verre depoli, avec le bord de la
+   bande bien visible. Un reflet, sur un verre de cette taille, c'est un TRAIT.
+
+   Attention : translateX est en pourcentage de la LARGEUR DE L'ELEMENT. En
+   retrecissant la bande, il faut rallonger la course dans la meme proportion,
+   sinon elle ne traverse plus rien — c'est 100/16 * 100, d'ou les 660 % de
+   verreLustre. */
+[data-verre]::after{
+  content:"";position:absolute;top:-40%;left:0;width:16%;height:180%;
+  background:linear-gradient(104deg,
+    rgba(228,214,255,0) 0%, rgba(228,214,255,.35) 26%,
+    #fff 50%, rgba(255,255,255,.85) 60%,
+    rgba(228,214,255,.30) 80%, rgba(228,214,255,0) 100%);
+  filter:blur(calc(.6*var(--u)));
+  transform:translateX(-120%);
+}
+
+[data-herovisual].pose-tenue [data-verre]{
+  opacity:1;
+}
+[data-herovisual].pose-tenue [data-verre]::after{
+  animation:verreLustre 3.1s cubic-bezier(.4,.05,.25,1) infinite;
+}
+[data-herovisual].pose-tenue [data-verre="d"],
+[data-herovisual].pose-tenue [data-verre="d"]::after{ animation-delay:.28s }
+
+/* Le lustre traverse sur 40 % du cycle au lieu de 24 % : en dessous, il passe
+   trop vite pour qu'on le voie, et le verre a juste l'air de clignoter. */
+@keyframes verreLustre{
+  0%   { transform:translateX(-120%); opacity:0 }
+  7%   { opacity:1 }
+  33%  { opacity:1 }
+  42%  { transform:translateX(660%); opacity:0 }
+  100% { transform:translateX(660%); opacity:0 }
+}
+/* L'ECLAT A ETE SUPPRIME — les deux versions donnaient le meme defaut.
+
+   C'etait d'abord un `box-shadow`, donc un halo pose AUTOUR de la boite : il en
+   dessinait le pourtour. Je l'ai remplace par un eclaircissement du verre
+   entier (`background-color` qui pulse), en pensant que le masque suffirait a
+   le rendre informe. Verifie dans Chromium : non. Un aplat qui remplit la
+   boite, meme fondu sur les bords, reste un aplat — on lisait une ellipse pale
+   posee sur le verre, et son contour se voyait d'autant mieux qu'il ne
+   coincidait avec rien dans l'image.
+
+   Conclusion : sur un verre de 48 x 28 px, RIEN ne doit remplir la boite. Il ne
+   reste que ce qui traverse (le lustre) et un point speculaire discret. Ce qui
+   fait « ca brille » est le passage lui-meme, pas un halo. */
+
+/* LE REPLI SANS ANIMATION. Deux corrections.
+
+   1. Il ne s'applique plus quand ?motion=full est demande. Une media query ne
+      sait rien d'un parametre d'URL : sur une machine ou « reduire les
+      animations » est actif en permanence, le reflet restait fige quoi qu'on
+      fasse, et ?motion=full ne pouvait rien y changer — il n'agit que dans le
+      JS. C'est ce meme JS qui pose maintenant data-motion="full" sur <html>,
+      et la regle s'efface devant lui.
+
+   2. Le lustre n'est plus GARE a gauche du verre. Un balayage arrete en cours
+      de course ne se lit pas comme un reflet : on voyait une tache pale a
+      cheval sur le bord du verre et sur la joue. Un reflet immobile, c'est un
+      point speculaire — le ::before, qui est fait pour ca. Le ::after
+      disparait. */
+@media (prefers-reduced-motion: reduce){
+  html:not([data-motion="full"]) [data-herovisual].pose-tenue [data-verre],
+  html:not([data-motion="full"]) [data-herovisual].pose-tenue [data-verre]::after{ animation:none }
+  html:not([data-motion="full"]) [data-verre]::after{ opacity:0 }
+  html:not([data-motion="full"]) [data-verre]::before{ opacity:.62 }
+}
+
+/* L'AMPOULE QUI LUIT.
+   Centre et taille mesures sur la derniere image de la rotation : le verre
+   allume occupe 7,7 % x 12 % de la boite, centre a 49,75 % / 37,87 %. Le halo,
+   lui, deborde largement — c'est de la lumiere, pas un objet.
+   Comme les reflets de lunettes, tout ne s'allume qu'une fois la pose tenue. */
+[data-ampoule]{
+  position:absolute; left:49.75%; top:37.87%;
+  width:30%; height:30%;
+  transform:translate(-50%,-50%);
+  pointer-events:none; z-index:3; opacity:0;
+  transition:opacity .8s ease;
+  background:radial-gradient(circle,
+    rgba(255,214,148,.50) 0%, rgba(255,176,72,.30) 22%,
+    rgba(255,146,34,.13) 44%, rgba(255,130,20,0) 70%);
+  filter:blur(calc(2.5*var(--u)));
+  mix-blend-mode:screen;
+}
+/* les poussieres de lumiere : posees en pourcentage DANS le halo, elles
+   montent et s'eteignent. Les valeurs --dx --dy --dur --del sont ecrites par
+   scanHero(), une fois, a la construction. */
+/* Pas de disque plein : un point plein + une ombre portee se lit comme une
+   pastille, meme petite. La particule EST un degrade qui s'eteint avant son
+   bord — il n'y a donc aucun contour a voir. */
+[data-ampoule] i{
+  position:absolute; border-radius:50%;
+  background:radial-gradient(circle,
+    rgba(255,244,222,.90) 0%, rgba(255,212,146,.38) 34%,
+    rgba(255,178,84,.10) 58%, rgba(255,170,70,0) 74%);
+  opacity:0;
+}
+/* Le coeur du filament. Petit, presque blanc, il sursaute plus vite que le
+   halo : c'est lui qui donne le contact qui gresille. Le flou du parent
+   l'atteint aussi, donc il se lit comme de la lumiere, pas comme un disque. */
+[data-ampoule]::before{
+  content:''; position:absolute; left:50%; top:50%;
+  width:26%; height:34%; border-radius:50%;
+  transform:translate(-50%,-50%);
+  background:radial-gradient(circle,
+    rgba(255,247,228,.95) 0%, rgba(255,208,136,.55) 45%, rgba(255,170,60,0) 78%);
+  opacity:0;
+}
+[data-herovisual].pose-tenue [data-ampoule]{
+  opacity:1;
+  /* intermittence : la lampe tient, rate, se rattrape. Les creux tombent a
+     10 / 37 / 57 / 91 % du cycle — les memes que le filament, sinon le halo
+     et le coeur clignotent chacun dans leur coin. */
+  animation:ampouleLuit 5.4s cubic-bezier(.4,0,.2,1) infinite;
+}
+[data-herovisual].pose-tenue [data-ampoule]::before{
+  animation:filament 5.4s linear infinite;
+}
+/* les poussieres vivent DANS le halo : quand il baisse, elles baissent avec
+   lui, sans avoir a repeter le clignotement. */
+[data-herovisual].pose-tenue [data-ampoule] i{
+  animation:poussiere var(--dur) ease-in-out var(--del) infinite;
+}
+@keyframes ampouleLuit{
+  0%   { transform:translate(-50%,-50%) scale(1);    opacity:.74 }
+  7%   { transform:translate(-50%,-50%) scale(1.17); opacity:1 }
+  10%  { transform:translate(-50%,-50%) scale(1.01); opacity:.50 }
+  13%  { transform:translate(-50%,-50%) scale(1.20); opacity:1 }
+  30%  { transform:translate(-50%,-50%) scale(1.08); opacity:.88 }
+  37%  { transform:translate(-50%,-50%) scale(1);    opacity:.58 }
+  40%  { transform:translate(-50%,-50%) scale(1.14); opacity:.97 }
+  54%  { transform:translate(-50%,-50%) scale(1.05); opacity:.82 }
+  57%  { transform:translate(-50%,-50%) scale(.97);  opacity:.38 }
+  60%  { transform:translate(-50%,-50%) scale(1.21); opacity:1 }
+  74%  { transform:translate(-50%,-50%) scale(1.07); opacity:.86 }
+  86%  { transform:translate(-50%,-50%) scale(1.13); opacity:.96 }
+  91%  { transform:translate(-50%,-50%) scale(1.01); opacity:.62 }
+  100% { transform:translate(-50%,-50%) scale(1);    opacity:.74 }
+}
+@keyframes filament{
+  0%, 100% { opacity:.85 }
+  6%  { opacity:1 }
+  10% { opacity:.18 }
+  13% { opacity:1 }
+  28% { opacity:.92 }
+  37% { opacity:.30 }
+  40% { opacity:1 }
+  52% { opacity:.82 }
+  57% { opacity:.12 }
+  60% { opacity:1 }
+  74% { opacity:.90 }
+  91% { opacity:.45 }
+  94% { opacity:1 }
+}
+/* elles montent en derivant : un point milieu evite la ligne droite. */
+@keyframes poussiere{
+  0%   { transform:translate(0,0) scale(.2); opacity:0 }
+  14%  { opacity:.72 }
+  45%  { transform:translate(calc(var(--dx) * .30), calc(var(--dy) * .46)) scale(1); opacity:.52 }
+  72%  { transform:translate(calc(var(--dx) * .82), calc(var(--dy) * .76)) scale(.86); opacity:.24 }
+  100% { transform:translate(var(--dx), var(--dy)) scale(.7); opacity:0 }
+}
+@media (prefers-reduced-motion: reduce){
+  html:not([data-motion="full"]) [data-herovisual].pose-tenue [data-ampoule],
+  html:not([data-motion="full"]) [data-herovisual].pose-tenue [data-ampoule]::before,
+  html:not([data-motion="full"]) [data-herovisual].pose-tenue [data-ampoule] i{ animation:none }
+  html:not([data-motion="full"]) [data-herovisual].pose-tenue [data-ampoule]::before{ opacity:.9 }
+  html:not([data-motion="full"]) [data-herovisual].pose-tenue [data-ampoule] i{ opacity:.5 }
+}
+/* Les deux calques de la figurine sont maintenant des canvas : ils portent la
+   rotation. Meme boite que les anciennes images, donc les masques --sa/--sb et
+   --ha..--hd restent valables au pixel pres. */
+canvas.scanSolid, canvas.scanWire{
+  position:absolute;inset:0;width:100%;height:100%;display:block;
 }
 
 /* ---------------------------------------------------------------------
@@ -437,4 +708,88 @@ input,textarea{font:inherit}
 @media (max-width:900px){
   [data-temoins]{flex-direction:column !important;gap:calc(34*var(--u)) !important}
   [data-temoins] > div{margin-top:0 !important;transform:none !important}
+}
+
+/* ==========================================================================
+   Apparition au balayage — séquence 1.               (ajouté le 20 août 2026)
+   Tout est confiné à [data-herovisual]. Les variables lues ici
+   (--sa --sb --ha --hb --hc --hd --ly --lo --footo --cx --cy --cr) ne sont
+   écrites que par scanHero(). Le transform du hero (--px --py --sc) n'est
+   jamais touché : il appartient toujours à parallax()/heroScroll().
+   Pour désactiver l'effet : mettre SURVOL_AMPOULE et SCAN_HERO à false dans
+   PixoveryPage.jsx, rien d'autre à défaire.
+   ========================================================================== */
+@property --cr { syntax: '<percentage>'; inherits: true; initial-value: 0%; }
+
+[data-herovisual]{
+  --sa:100%; --sb:100%; --ha:0%; --hb:0%; --hc:0%; --hd:0%;
+  --ly:0%; --lo:0; --footo:1; --cx:50%; --cy:50%; --cr:0%;
+  transition:--cr .28s cubic-bezier(.16,1,.3,1);
+}
+
+/* les ombres et la lueur au sol n'arrivent qu'avec les pieds */
+[data-herovisual] [data-shade], [data-herovisual] [data-ground]{
+  opacity:var(--footo,1); transition:opacity .25s linear;
+}
+
+/* couche solide : révélée au-dessus de la ligne, retirée sous le halo souris */
+.scanSolid{
+  -webkit-mask-image:linear-gradient(to bottom, #000 var(--sa), rgba(0,0,0,0) var(--sb)),radial-gradient(ellipse var(--cr) var(--cr) at var(--cx) var(--cy), #000 0%, #000 44%, rgba(0,0,0,.82) 64%, rgba(0,0,0,.42) 82%, rgba(0,0,0,0) 100%);
+          mask-image:linear-gradient(to bottom, #000 var(--sa), rgba(0,0,0,0) var(--sb)),radial-gradient(ellipse var(--cr) var(--cr) at var(--cx) var(--cy), #000 0%, #000 44%, rgba(0,0,0,.82) 64%, rgba(0,0,0,.42) 82%, rgba(0,0,0,0) 100%);
+  -webkit-mask-size:100% 100%, 100% 100%;mask-size:100% 100%, 100% 100%;
+  -webkit-mask-repeat:no-repeat,no-repeat;mask-repeat:no-repeat,no-repeat;
+  -webkit-mask-composite:source-out;mask-composite:subtract;
+}
+
+/* couche filaire : la bande que le balayage vient de traverser, ou le halo du curseur */
+.scanWrap{
+  position:absolute;inset:0;z-index:2;pointer-events:none;
+  /* Plus de mask-image ici. Il valait url(/assets/hero-scan-a.webp), la
+     silhouette FIXE du personnage : elle bornait le filaire. Maintenant que la
+     figurine tourne, cette silhouette ne correspond qu'a la premiere image et
+     rognerait tout le reste. Le filaire est deja detoure a la source. */
+}
+/* Le masque d'origine ne montrait le filaire que dans une BANDE autour du
+   trait (transparent → noir → noir → transparent). On veut maintenant le voir
+   sur TOUT ce que le balayage n'a pas encore atteint : il reste donc opaque
+   de la ligne jusqu'en bas. */
+.scanWire, .scanGrid{
+  -webkit-mask-image:linear-gradient(to bottom, rgba(0,0,0,0) var(--ha), #000 var(--hb), #000 100%),radial-gradient(ellipse var(--cr) var(--cr) at var(--cx) var(--cy), #000 0%, #000 44%, rgba(0,0,0,.82) 64%, rgba(0,0,0,.42) 82%, rgba(0,0,0,0) 100%);
+          mask-image:linear-gradient(to bottom, rgba(0,0,0,0) var(--ha), #000 var(--hb), #000 100%),radial-gradient(ellipse var(--cr) var(--cr) at var(--cx) var(--cy), #000 0%, #000 44%, rgba(0,0,0,.82) 64%, rgba(0,0,0,.42) 82%, rgba(0,0,0,0) 100%);
+  -webkit-mask-size:100% 100%, 100% 100%;mask-size:100% 100%, 100% 100%;
+  -webkit-mask-repeat:no-repeat,no-repeat;mask-repeat:no-repeat,no-repeat;
+  -webkit-mask-composite:source-over;mask-composite:add;
+}
+/* Net, sans halo : le drop-shadow empatait le maillage. */
+.scanWire{position:absolute;inset:0;width:100%;height:100%;filter:none}
+/* opacite baissee de .30 a .18 : les rayures se superposaient au maillage et
+   brouillaient les traits horizontaux, qui sont deja les plus fins. */
+.scanGrid{position:absolute;inset:0;pointer-events:none;mix-blend-mode:screen;opacity:.18;
+  background:repeating-linear-gradient(to bottom, rgba(255,45,190,.22) 0 calc(1*var(--u)), rgba(0,0,0,0) calc(1*var(--u)) calc(4*var(--u)))}
+
+/* particules de lumière emportées par le balayage */
+.scanSparks{position:absolute;left:-4%;right:-4%;top:var(--ly);height:0;z-index:7;pointer-events:none;opacity:var(--lo)}
+.scanSparks i{position:absolute;top:0;border-radius:50%;background:#FFE9FA;
+  transform:translate(-50%,-50%);will-change:transform,opacity;
+  animation:scanFlotte var(--dur) ease-in-out var(--del) infinite}
+@keyframes scanFlotte{
+  0%   {transform:translate(-50%,-50%) scale(.35); opacity:0}
+  12%  {opacity:1}
+  100% {transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1); opacity:0}
+}
+
+/* le trait de balayage */
+.scanLine{position:absolute;left:-3%;right:-3%;top:var(--ly);height:calc(2.2*var(--u));z-index:6;pointer-events:none;
+  opacity:var(--lo);transform:translateY(-50%);
+  background:linear-gradient(90deg, rgba(255,45,190,0) 0%, rgba(255,45,190,.95) 18%, #fff 50%, rgba(255,45,190,.95) 82%, rgba(255,45,190,0) 100%);
+  box-shadow:0 0 calc(18*var(--u)) calc(3*var(--u)) rgba(255,45,190,.55)}
+.scanLineGlow{position:absolute;left:-6%;right:-6%;top:var(--ly);height:calc(46*var(--u));z-index:5;pointer-events:none;
+  opacity:calc(var(--lo) * .75);transform:translateY(-100%);
+  background:linear-gradient(to bottom, rgba(255,45,190,0) 0%, rgba(255,45,190,.16) 70%, rgba(255,45,190,.34) 100%);
+  filter:blur(calc(6*var(--u)))}
+
+@media (prefers-reduced-motion: reduce){
+  .scanGrid{display:none}
+  .scanLineGlow{filter:none;opacity:calc(var(--lo) * .5)}
+  .scanWire{filter:none}
 }
