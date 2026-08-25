@@ -1,4 +1,13 @@
 User-agent: *
 Allow: /
 
+# Bancs d'essai et prototypes : ils vivent dans public/ pour etre ouverts
+# a la main pendant le developpement, donc Vite les recopie tels quels a la
+# publication. Ce sont des copies quasi completes de la page d'accueil : sans
+# cette regle, Google indexerait quatorze pages en double et ne saurait plus
+# laquelle est la vraie. A supprimer du depot le jour ou ils ne servent plus.
+Disallow: /proto-
+Disallow: /_tmp.html
+Disallow: /intro-tv-v1.html
+
 Sitemap: https://www.pixovery.com/sitemap.xml
