@@ -216,10 +216,24 @@ export default class PixoveryPage extends React.Component {
     const cv = this.q('[data-spin]'), tour = this.q('[data-tour]');
     const sec = this.q('#processus');
     if(!cv || !tour || !sec) return;
+    /* Sur mobile la figurine est masquee (voir global.css). On sort AVANT de
+       creer les Image() : sinon les deux planches, 1,3 Mo, partiraient en
+       telechargement sur telephone pour un element que personne ne voit. */
+    if(window.matchMedia && window.matchMedia('(max-width:768px)').matches) return;
     const cx = cv.getContext('2d');
     if(!cx) return;
 
-    const N = 72, COLS = 6, T = 576, PER = 36;
+    /* Planches refaites le 24/08 a partir de la video du blister (241 images
+       a 30 i/s, fond noir). 72 poses retenues, tuiles de 384 px, alpha tiree
+       de la LUMINANCE et non par colorkey : le sujet a des noirs profonds
+       (les lunettes, les ombres du blister) qu'un colorkey aurait troues.
+       Un seuil bas et une montee courte suffisent, le fond de la video est
+       du noir pur. */
+    /* Tuiles RECTANGULAIRES, 448 x 640. Un blister est un portrait : dans
+       une tuile carree, un tiers des pixels payait du vide sur les cotes.
+       A poids egal, le passage au format de l'objet rend l'image nettement
+       plus nette. */
+    const N = 72, COLS = 6, PER = 36, TW = 448, TH = 640;
     const sheets = [new Image(), new Image()];
     let vue = -1, prets = 0, rate = false;
 
@@ -228,13 +242,29 @@ export default class PixoveryPage extends React.Component {
     const reduce = !force && window.matchMedia
       && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    const draw = f => {
-      const i = reduce ? Math.round(f / 3) * 3 : Math.round(f);
-      if(i === vue || !sheets[0].naturalWidth) return;
-      vue = i;
+    /* LE ZOOM D'ENTREE. La sequence s'ouvre serree sur le blister puis
+       recule jusqu'a le cadrer entier. Il est fait au dessin, pas en CSS :
+       un transform:scale sur le canvas agrandirait des pixels deja traces,
+       alors qu'ici on redessine la tuile a la taille voulue — c'est net a
+       toutes les etapes. */
+    const ZOOM0 = 1.20, ZOOM_FIN = 0.28;   /* depart, et part de la course */
+    let vueZ = -1;
+    const draw = (f, z) => {
+      /* LE MODULO EST ICI, PAS AILLEURS. Sans lui, une pose a 71,6 arrondit
+         a 72 — un index qui n'existe pas. `sheets[2]` est alors undefined,
+         drawImage leve une exception, le canvas GARDE l'image precedente
+         (le dos), et l'image suivante saute directement a 0 (la face).
+         C'est ca, la teleportation : pas un raccord rate, une case hors
+         planche. Le modulo referme la boucle : 72 redevient 0. */
+      const i = (reduce ? Math.round(f / 3) * 3 : Math.round(f)) % N;
+      const zz = Math.round(z * 400) / 400;      /* on ne redessine pas pour rien */
+      if((i === vue && zz === vueZ) || !sheets[0].naturalWidth) return;
+      vue = i; vueZ = zz;
       const k = (i / PER) | 0, j = i % PER;
-      cx.clearRect(0, 0, T, T);
-      cx.drawImage(sheets[k], (j % COLS) * T, ((j / COLS) | 0) * T, T, T, 0, 0, T, T);
+      const dw = TW * zz, dh = TH * zz;          /* zoom centre */
+      cx.clearRect(0, 0, TW, TH);
+      cx.drawImage(sheets[k], (j % COLS) * TW, ((j / COLS) | 0) * TH, TW, TH,
+                   (TW - dw) / 2, (TH - dh) / 2, dw, dh);
     };
 
     let file = false;
@@ -243,7 +273,66 @@ export default class PixoveryPage extends React.Component {
       const r = sec.getBoundingClientRect(), vh = window.innerHeight;
       const span = vh * 0.25 + r.height;
       const p = Math.max(0, Math.min(1, (vh * 0.85 - r.top) / span));
-      draw(p * (N - 1));
+      /* le recul se fait sur les 30 premiers pour cent de la course, en
+         sortie douce : un zoom lineaire se lit comme un travelling mecanique */
+      const zp = Math.min(1, p / ZOOM_FIN);
+      const ze = 1 - Math.pow(1 - zp, 3);
+      /* UN TOUR CONTINU, QUI SE TERMINE DE FACE.
+         Rien n'est fige, rien n'attend : la rotation suit le defilement du
+         premier au dernier pixel de la section. Les 72 poses couvrent
+         exactement 360° — la 72e n'est pas la reprise de la 1re, elle
+         s'arrete juste avant. Le modulo ramene donc la fin sur la pose 0,
+         qui EST le packshot de face.
+         J'avais ajoute des zones mortes au debut et a la fin pour forcer la
+         face : ca hachait le mouvement pour rien. Une boucle qui se referme
+         sur elle-meme n'a besoin d'aucune de ces bequilles.
+         `pose` et pas `f` : cadence() declare deja un `f` plus bas. */
+      /* LA ROTATION SUIT LA VIE COLLEE DU BLISTER, RIEN D'AUTRE.
+         Deux mesures fausses avant celle-ci :
+         - la traversee de la SECTION : elle ne finit qu'une fois la section
+           entierement passee, longtemps apres que le blister soit parti ;
+         - la vie visible « au jugé » : elle ne tenait pas compte du fait
+           qu'un element collant se DECOLLE a la fin de son conteneur.
+
+         C'est ce decollement qui produisait ce que tu decrivais : le blister
+         quittait l'ecran de dos, puis la valeur continuait de courir dans le
+         vide et repassait de face une fois qu'on ne le voyait plus.
+
+         La bonne course est donc celle de son conteneur : elle demarre quand
+         il se colle (le haut du rail atteint la position collante) et se
+         termine quand il se decolle (le rail n'a plus de place sous lui).
+         Sur cette course, 0 et 1 sont tous les deux la pose de face, et il
+         est visible du premier au dernier instant. */
+      const rail = tour.parentElement;
+      const rr = rail ? rail.getBoundingClientRect() : r;
+      const colle = parseFloat(getComputedStyle(tour).top) || 0;
+      /* Le tour se boucle sur les 80 PREMIERS POUR CENT de cette course, pas
+         sur la totalite. Raison : le saut du dos a la face que tu voyais a
+         la fin. Il ne venait pas d'un raccord rate mais d'une course trop
+         longue — le blister se decollait alors qu'il en etait au dos, la
+         valeur finissait sa montee hors champ, et la pose de face
+         n'apparaissait qu'au retour, d'un coup.
+         En terminant le tour avant le decollement, la derniere pose est
+         atteinte a l'ecran, image par image, et le blister TIENT sa face
+         pendant qu'il s'en va. */
+      /* LA DISTANCE DU TOUR NE PEUT PAS DEPASSER LA COURSE REELLE.
+         C'est ici que le tour etait casse. Il y avait un plancher a 900 px,
+         posé pour eviter une rotation trop rapide. Mais la course collee
+         vaut (hauteur du rail - hauteur du blister) : les quatre etapes
+         mesurent ~1070 px et le blister 680 px, donc la course fait
+         ~390 px. Le tour etait donc etale sur 900 px de defilement qui
+         n'existent pas : la figurine atteignait 0,43 de sa boucle — 155°,
+         soit le profil — puis se decollait et repartait de dos. Elle ne
+         faisait JAMAIS son tour.
+         On borne desormais par le haut seulement, et le plafond ne peut
+         pas depasser la course disponible. 0,88 : le tour se termine juste
+         avant le decollement, la pose de face est donc atteinte a l'ecran
+         et tenue pendant que le blister s'en va. */
+      const course = Math.max(1, rr.height - tour.offsetHeight);
+      const vie = Math.min(course * 0.88, 1800);
+      const pv = Math.max(0, Math.min(1, (colle - rr.top) / vie));
+      const pose = (pv * N) % N;
+      draw(pose, reduce ? 1 : ZOOM0 + (1 - ZOOM0) * ze);
       /* Fondu a l'entree uniquement. Il y avait aussi une sortie — la
          figurine s'effacait sur les 16 derniers pourcents de la section —
          mais elle disparaissait alors qu'on la regardait encore. Le bord
@@ -251,7 +340,15 @@ export default class PixoveryPage extends React.Component {
          du champ d'elle-meme, comme n'importe quel contenu. */
       const ent = Math.min(1, p / 0.10);
       const f = ent, d = f * f * (3 - 2 * f);
-      tour.style.opacity = d.toFixed(3);
+      /* LA SORTIE. Il n'y avait qu'une entree en fondu : une fois decolle,
+         le blister remontait en clair jusqu'a passer sous le header, et il
+         reapparaissait par-dessus la section suivante. On le fait donc
+         s'eteindre pendant qu'il glisse sous la barre — la mesure est prise
+         sur SA propre boite, donc elle ne bouge pas tant qu'il est colle et
+         ne se declenche qu'au moment ou il part vraiment. */
+      const tr = tour.getBoundingClientRect();
+      const sortie = Math.max(0, Math.min(1, (tr.bottom - 120) / Math.max(1, tr.height * 0.6)));
+      tour.style.opacity = (d * sortie).toFixed(3);
       tour.style.transform = reduce ? 'none'
         : 'translateY(' + ((1 - d) * 26).toFixed(1) + 'px) scale(' + (0.955 + 0.045 * d).toFixed(4) + ')';
     };
@@ -267,7 +364,7 @@ export default class PixoveryPage extends React.Component {
     sheets.forEach((im, k) => {
       im.onload = pret;
       im.onerror = () => { rate = true; pret(); };
-      im.src = '/assets/spin-' + 'ef'[k] + '.webp';
+      im.src = '/assets/proc-' + 'ab'[k] + '.webp';
     });
   }
 
@@ -353,11 +450,20 @@ export default class PixoveryPage extends React.Component {
        Appelee a chaque frame, elle recale la section soixante fois par
        seconde et LE SCROLL DE TOUT LE SITE MEURT. Le vol reste pilote par
        le scroll, ce qui n'exige aucune boucle. */
+    /* le header remet ce drapeau a zero en fin de vol : sans ca, un vol qui
+       s'ARRETE dans Services laisserait etaitTenue a true et l'entree ne se
+       rejouerait plus jamais */
+    this.navReset = () => { etaitTenue = false; };
+
     const cadence = () => {
       file = false;
       const r = sec.getBoundingClientRect();
       const t0 = tenue();
-      if(t0 && !etaitTenue){
+      /* Un clic du menu qui VISE plus loin (Contact, A propos) traverse cette
+         section en vol. Sans ce garde-fou, l'entree ci-dessous la recadrait
+         de force — lenis.scrollTo immediate+force — et le voyage mourait ici :
+         on cliquait Contact, on atterrissait sur Services. */
+      if(t0 && !etaitTenue && !this.navVol){
         /* On vient d'entrer. preventDefault n'annule PAS un defilement deja
            lance : sans arret franc, l'elan traverse la section et le premier
            service ne se pose jamais. On coupe donc net, et on se cadre sur
@@ -869,6 +975,22 @@ export default class PixoveryPage extends React.Component {
         e.preventDefault();
         const mark = sec.querySelector('[data-chapter],[data-galhead]');
         let top = 0;
+        /* « Accueil » ne renvoie pas au premier pixel : il pose la page au
+           bout de la piste du hero, la figurine montee et l'ampoule levee.
+           Le haut de la page, lui, ne montre qu'une scene vide — c'est un
+           point de depart d'animation, pas un etat a montrer a quelqu'un
+           qui DEMANDE a revenir a l'accueil. */
+        if(href === '#accueil' && this.heroPoseY){
+          const y = this.heroPoseY();
+          this.navVol = true;
+          const pose = () => { this.navVol = false; if(this.navReset) this.navReset(); };
+          clearTimeout(this.navGarde);
+          this.navGarde = setTimeout(pose, 1600);
+          if(this.lenis) this.lenis.scrollTo(y, { duration: 1.15, force: true, onComplete: pose });
+          else window.scrollTo({ top: y, behavior: 'smooth' });
+          try { history.replaceState(null, '', href); } catch(_){}
+          return;
+        }
         if(mark){
           const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--u')) || 1;
           top = Math.max(0, window.scrollY + mark.getBoundingClientRect().top - (HDR + GAP) * u);
@@ -876,7 +998,17 @@ export default class PixoveryPage extends React.Component {
         /* global.css ne pose plus scroll-behavior:smooth (il doublait le
            lissage de Lenis). Quand Lenis est la, c'est lui qui glisse ;
            sinon on garde le 'smooth' natif comme repli. */
-        if(this.lenis) this.lenis.scrollTo(top, { duration: 1.15, force: true });
+        /* Le vol est annonce : la section Services ne doit pas se recadrer
+           pendant qu'on la traverse (voir services()). Le drapeau retombe a
+           l'arrivee, ou au pire sur le minuteur de securite. */
+        this.navVol = true;
+        const atterri = () => {
+          this.navVol = false;
+          if(this.navReset) this.navReset();
+        };
+        clearTimeout(this.navGarde);
+        this.navGarde = setTimeout(atterri, 1600);
+        if(this.lenis) this.lenis.scrollTo(top, { duration: 1.15, force: true, onComplete: atterri });
         else window.scrollTo({ top: top, behavior: 'smooth' });
         try { history.replaceState(null, '', href); } catch(_){}
       });
@@ -933,13 +1065,19 @@ export default class PixoveryPage extends React.Component {
       const ico = svc.querySelector('[data-svcico]'), img = ico && ico.querySelector('img');
       this.on(svc, 'mouseenter', () => {
         wash.style.opacity = '1'; num.style.color = 'var(--pink-b)';
-        h3.style.transform = 'translateX(calc(10*var(--u)))';
+        /* Plus de glissement du titre au survol. Le numero, le titre et le
+           paragraphe sont tous en colonne 1 : ils partagent le meme bord
+           gauche. Decaler le seul titre de 10 u des que la souris entre
+           dans le panneau cassait cet alignement — et comme la souris est
+           forcement dans le panneau quand on le lit, l'etat decale etait
+           l'etat NORMAL. Le survol garde le reste : le lavis, le numero
+           qui s'allume, le texte qui s'eclaircit. */
         p.style.color = 'rgba(255,255,255,.72)';
         if(img) img.style.opacity = '1';
       });
       this.on(svc, 'mouseleave', () => {
         wash.style.opacity = '0'; num.style.color = 'rgba(255,255,255,.30)';
-        h3.style.transform = 'none'; p.style.color = 'rgba(255,255,255,.45)';
+        p.style.color = 'rgba(255,255,255,.45)';
         /* La disquette reste PLEINE en quittant le panneau. Elle etait
            rendue a 55 % : elle n'etait franche qu'au survol, et pendant son
            vol d'entree — ou personne ne survole — elle traversait l'ecran a
@@ -1280,8 +1418,17 @@ export default class PixoveryPage extends React.Component {
     pieces.forEach(p => {
       const frame = p.querySelector('[data-pieceframe]');
       if(!frame) return;
-      frame.style.cursor = 'zoom-in';
-      this.on(frame, 'click', e => { if(moved > 6) return; e.preventDefault(); openLb(p); });
+      /* Une piece qui porte data-projet a sa propre etude de cas : le clic
+         y mene au lieu d'ouvrir le plein ecran. Les autres gardent le plein
+         ecran — on ne casse rien tant qu'une page n'existe pas. */
+      const versProjet = p.dataset.projet;
+      frame.style.cursor = versProjet ? 'pointer' : 'zoom-in';
+      this.on(frame, 'click', e => {
+        if(moved > 6) return;
+        e.preventDefault();
+        if(versProjet){ window.location.href = versProjet; return; }
+        openLb(p);
+      });
     });
     if(lb) this.on(lb, 'click', e => { if(!lbBox || !lbBox.contains(e.target)) closeLb(); });
     const lbc = this.q('[data-lbclose]');
@@ -1471,6 +1618,129 @@ export default class PixoveryPage extends React.Component {
     return lettres;
   }
 
+  /* ========================================================================
+     LE TITRE DU HERO, PILOTE PAR LE DEFILEMENT
+
+     Sorti de intro() et pose ici pour une raison precise : intro() SORT
+     PREMATUREMENT quand on n'arrive pas par le haut (`if(yInitial > seuil)`).
+     Tant que le titre vivait dedans, ouvrir le site ailleurs qu'en haut —
+     ou simplement recharger en cours de page — n'installait jamais le
+     defilement du titre : plus aucune animation de toute la visite.
+     Cette methode est donc appelee dans les DEUX cas.
+     ======================================================================== */
+  titreAuScroll(){
+    const lettres = this.splitTitle();
+    const lines = this.qa('[data-ln]');
+    if(!lettres.length){ lines.forEach(l => { l.style.transform = 'none'; }); return; }
+    const para = this.q('[data-heroline="p"]');
+    const btn  = this.q('[data-heroline="btn"]');
+    const pisteHero = this.q('[data-heropiste]');
+    const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--u')) || 1;
+
+    /* --- LE TITRE ARRIVE AU SCROLL, PLUS AU CHARGEMENT ------------------
+       Reprise du pen GreenSock « containerAnimation SplitText » : chaque
+       lettre arrive avec une rotation et un decalage vertical tires au
+       sort, sur un rebond back.out — mais la tete de lecture n'est plus
+       une timeline, c'est la POSITION DE DEFILEMENT.
+
+       Ce que ca change, concretement :
+       - il n'y a plus de duree. Une chute a une duree ; ici, une lettre
+         avance exactement autant qu'on scrolle, et recule si on remonte.
+         On ne peut donc plus rien exprimer en secondes.
+       - les lettres se relaient au lieu de tomber ensemble : chacune a sa
+         propre fenetre le long de la course, decalee par son rang.
+       - back.out DEPASSE puis revient. C'est l'inverse d'une chute, qui
+         accelere et s'arrete net. Le pen tient son elasticite de la.
+
+       L'arrivee tient dans les 24 premiers pour cent de la piste du hero,
+       donc bien avant que la figurine finisse de tourner.
+
+       A savoir : au tout premier pixel, le titre n'est PAS la. C'est le
+       principe meme d'une animation scrubbee — elle n'a pas commence tant
+       qu'on n'a pas scrolle. */
+    const masques = lines.map(l => l.parentElement).filter(Boolean);
+    lines.forEach(l => { l.style.transform = 'none'; });
+    /* les masques restent ouverts en permanence : une lettre qui arrive
+       de -180 % en sortirait a chaque frame */
+    masques.forEach(m => {
+      if(m.dataset.ov === undefined) m.dataset.ov = m.style.overflow || '';
+      m.style.overflow = 'visible';
+    });
+
+    const N = lettres.length;
+    const FEN = 0.42;                 /* largeur de la fenetre d'une lettre */
+    lettres.forEach((c, i) => {
+      /* meme tirage deterministe que la chute d'avant : en scrub, la meme
+         position de scroll DOIT rendre la meme image, sinon tout grelotte */
+      const r = Math.sin(i * 12.9898);
+      /* Amplitude reduite par rapport au pen (qui va a ±200 %). Le pen n'a
+         qu'UNE ligne ; ici il y en a trois, empilees, et les masques sont
+         ouverts en permanence. A ±200 % le « F » de FAISONS venait se poser
+         en plein sur le « D » de DECOLLER — ce qu'on lisait comme un bug en
+         remontant. ±75 % laisse le mouvement lisible sans chevauchement. */
+      c.dataset.dy = ((r < 0 ? -1 : 1) * (30 + Math.abs(r) * 45)).toFixed(0);
+      c.dataset.dr = ((i % 2 ? 1 : -1) * (6 + Math.abs(r) * 14)).toFixed(1);
+      c.dataset.t0 = ((i / N) * (1 - FEN)).toFixed(4);
+    });
+
+    const cue = this.q('[data-cue]');
+    const u16 = u;                    /* l'unite de la maquette */
+    const ease = (gsap.parseEase && gsap.parseEase('back.out(1.2)'))
+               || (t => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2));
+    const ARRIVEE = 0.24;             /* part de la piste consacree au titre */
+    const courseTitre = () => pisteHero
+      ? Math.max(1, (pisteHero.offsetHeight - window.innerHeight) * ARRIVEE)
+      : Math.max(1, window.innerHeight * ARRIVEE);
+
+    const poseLettres = () => {
+      const pa = Math.min(1, Math.max(0, (window.scrollY || 0) / courseTitre()));
+      lettres.forEach(c => {
+        const t0 = +c.dataset.t0;
+        const u = Math.min(1, Math.max(0, (pa - t0) / FEN));
+        const e = ease(u);
+        /* Fondu CONTINU, pas un interrupteur. Avec un binaire, la premiere
+           lettre — dont la fenetre commence a zero — s'eteignait d'un coup
+           en arrivant en haut de page pendant que les autres restaient
+           visibles : un clignotement isole, qui se lit comme un defaut. */
+        c.style.opacity = Math.min(1, u * 5).toFixed(3);
+        c.style.transform = 'translateY(' + ((1 - e) * +c.dataset.dy).toFixed(2) + '%)'
+                          + ' rotate(' + ((1 - e) * +c.dataset.dr).toFixed(2) + 'deg)';
+      });
+      /* Le sous-texte et le bouton suivent la MEME course, mais apres les
+         lettres : ils commencent quand le titre est aux trois quarts pose.
+         Les enchainer dans la meme fonction plutot que par une timeline
+         separee garantit qu'ils ne peuvent pas se desynchroniser du titre
+         — il n'y a qu'une seule tete de lecture, la position de scroll. */
+      const fondu = (el, a, b, dy, magnetique) => {
+        if(!el) return;
+        const v = Math.min(1, Math.max(0, (pa - a) / (b - a)));
+        const e = 1 - Math.pow(1 - v, 3);        /* sortie douce, sans rebond */
+        const y = ((1 - e) * dy).toFixed(2) + 'px';
+        el.style.opacity = v.toFixed(3);
+        /* Le bouton porte l'effet magnetique : sa position horizontale vit
+           dans --mx, ecrite par parallax() a chaque mouvement de souris.
+           Ecraser son transform par un simple translateY tuerait l'effet —
+           on garde donc la variable dans la valeur. */
+        el.style.transform = magnetique
+          ? 'translate(var(--mx,0px),' + y + ')'
+          : 'translateY(' + y + ')';
+      };
+      fondu(para, 0.70, 0.94, 18 * u16, false);
+      fondu(btn,  0.82, 1.00, 16 * u16, true);
+      /* Le rideau noir a ete retire : place dans le conteneur centre de
+         1024 u, il ne couvrait pas toute la largeur de la section — la
+         nappe violette debordait sur les cotes et on voyait la couture. */
+      if(cue) cue.style.opacity = (1 - Math.min(1, pa / 0.34)).toFixed(3);
+    };
+    let fileT = false;
+    const queueT = () => { if(fileT) return; fileT = true; requestAnimationFrame(() => { fileT = false; poseLettres(); }); };
+    this.on(window, 'scroll', queueT, {passive: true});
+    this.on(window, 'resize', queueT, {passive: true});
+    poseLettres();
+    /* open() doit pouvoir tout reposer : le filet de securite passe par la */
+    this.poseTitre = poseLettres;
+  }
+
   intro(){
     const intro = this.q('[data-intro]');
     /* le hero doit pouvoir se ré-ouvrir si le template est re-rendu */
@@ -1481,18 +1751,31 @@ export default class PixoveryPage extends React.Component {
       this.qa('[data-ln]').forEach(i => { i.style.transform = 'none'; });
       /* le titre est decoupe en lettres : le filet de securite doit les
          reposer elles aussi, sinon il rouvre une ligne vide */
-      this.qa('[data-ln] [data-c]').forEach(c => {
+      /* les lettres sont pilotees par le defilement : on ne les fige pas a
+         leur etat final, on redemande simplement leur pose courante */
+      if(this.poseTitre) this.poseTitre();
+      else this.qa('[data-ln] [data-c]').forEach(c => {
         c.style.transform = 'none'; c.style.opacity = '1';
       });
-      this.qa('[data-ln]').forEach(i => {
-        if(i.parentElement && i.parentElement.dataset.ov !== undefined)
-          i.parentElement.style.overflow = i.parentElement.dataset.ov;
-      });
-      const p = this.q('[data-heroline="p"]'), btn = this.q('[data-heroline="btn"]');
-      if(p){ p.style.opacity = '1'; p.style.transform = 'none'; }
-      if(btn){ btn.style.opacity = '1'; btn.style.transform = 'translate(var(--mx,0px),var(--my,0px))'; }
-      const cue = this.q('[data-cue]');
-      if(cue) cue.style.opacity = '1';
+      /* Les masques de ligne NE SE REFERMENT PLUS. Ils etaient rendus a leur
+         overflow:hidden d'origine en fin d'intro, du temps ou les lettres
+         avaient fini de tomber. Maintenant elles arrivent au defilement :
+         refermer les masques rognerait toutes celles qui ne sont pas encore
+         posees. */
+
+      /* Le sous-texte et le bouton ne sont PLUS forces a leur etat final.
+         C'est ce qui les faisait apparaitre sur une page vide : open() est
+         appele en fin de timeline — donc tres tot, maintenant qu'elle ne
+         contient plus rien — et il les allumait alors que le titre, lui,
+         attendait le scroll. Ils suivent la meme tete de lecture que le
+         reste, poseTitre() s'en charge. */
+      if(!this.poseTitre){
+        const p = this.q('[data-heroline="p"]'), btn = this.q('[data-heroline="btn"]');
+        if(p){ p.style.opacity = '1'; p.style.transform = 'none'; }
+        if(btn){ btn.style.opacity = '1'; btn.style.transform = 'translate(var(--mx,0px),var(--my,0px))'; }
+        const cue = this.q('[data-cue]');
+        if(cue) cue.style.opacity = '1';
+      }
     };
 
     /* --- L'INTRO NE SE JOUE QUE SI ON ARRIVE PAR LE HAUT ---------------
@@ -1530,6 +1813,9 @@ export default class PixoveryPage extends React.Component {
     const yInitial = forceIntro
       ? 0
       : (window.scrollY || document.documentElement.scrollTop || 0);
+    /* Le titre est branche sur le defilement dans tous les cas, y compris
+       quand la sequence d'entree ne se joue pas. */
+    this.titreAuScroll();
     if(yInitial > seuil){
       open();
       if(intro) intro.style.display = 'none';
@@ -1880,93 +2166,10 @@ export default class PixoveryPage extends React.Component {
        - les lignes elles-memes passent a transform:none tout de suite :
          ce ne sont plus elles qui portent le mouvement. On evite ainsi le
          piege du yPercent qui s'ajoute au translateY(112%) d'origine. */
-    const lettres = this.splitTitle();
-    if(lettres.length){
-      const masques = lines.map(l => l.parentElement).filter(Boolean);
-      /* On ouvre les masques de ligne pour laisser passer les lettres, mais
-         il faut alors refermer quelque part : sans ca une lettre qui tombe
-         de 300 % sort du hero par le haut et passe devant le header. Le
-         hero se clippe donc le temps de la sequence, et se rouvre apres. */
-      const heroBox = this.q('[data-hero]');
-      tl.add(() => {
-        if(heroBox){
-          if(heroBox.dataset.ov === undefined) heroBox.dataset.ov = heroBox.style.overflow || '';
-          heroBox.style.overflow = 'hidden';
-        }
-        lines.forEach(l => { l.style.transform = 'none'; });
-        masques.forEach(m => {
-          if(m.dataset.ov === undefined) m.dataset.ov = m.style.overflow || '';
-          m.style.overflow = 'visible';
-        });
-      }, 'scene');
-      /* Deux regles apprises au banc d'essai (hero-titre-v1.html) :
-
-         1. Une chute ACCELERE, donc l'ease est un "in". L'ancien
-            back.out(1.35) decelerait : ca se lit comme une arrivee en
-            douceur, pas comme une chute.
-         2. La lettre reste PLEINE pendant tout le trajet. On la revele d'un
-            coup a son depart avec un set(), jamais par un fondu : une lettre
-            qui s'eclaircit en tombant se lit comme un fantome.
-
-         Et surtout, on boucle lettre par lettre au lieu d'un seul fromTo
-         avec stagger. Mesure faite : avec un stagger, les cibles dont le
-         sous-tween n'a pas encore demarre se rendent a leur valeur FINALE
-         (opacites relevees 0,1,1,1,1... au temps 0). Un seul fromTo ne peut
-         donc pas les garder cachees avant leur tour. */
-      /* Masquage immediat, des la construction. L'ancien fromTo portait
-         opacity:0 et le rendait tout de suite (immediateRender). Maintenant
-         que l'opacite passe par des set() places sur la timeline, plus rien
-         ne cache les lettres avant que la tete de lecture atteigne 'scene' :
-         le titre s'afficherait en clair par-dessus le loader. */
-      gsap.set(lettres, { opacity: 0 });
-
-      lettres.forEach((c) => {
-        const dep = +c.dataset.dl * D;
-        const dur = 0.52 * D;
-        const t0  = 'scene+=' + dep.toFixed(3);
-        /* pas de masquage pour une lettre qui part a zero : les deux set()
-           tomberaient au meme instant et le dernier ajoute l'emporterait */
-        if(dep > 0.001) tl.set(c, { opacity: 0 }, 'scene');
-        tl.set(c, { opacity: 1 }, t0);
-        tl.fromTo(c,
-          { yPercent: +c.dataset.dy * M, rotation: +c.dataset.dr, scale: 1, y: 0 },
-          { yPercent: 0, rotation: 0, scale: 1, y: 0,
-            duration: dur, ease: 'power2.in' },
-          t0);
-        /* l'ecrasement a l'atterrissage : c'est lui qui donne le poids.
-           Coupe en mouvement reduit, ou il n'apporte que de la secousse. */
-        if(!reduced){
-          tl.to(c, { scaleY: 0.74, scaleX: 1.12, duration: 0.06, ease: 'power2.out' },
-                'scene+=' + (dep + dur).toFixed(3));
-          tl.to(c, { scaleY: 1, scaleX: 1, duration: 0.20, ease: 'elastic.out(1,0.45)' },
-                'scene+=' + (dep + dur + 0.06).toFixed(3));
-        }
-      });
-      tl.add(() => {
-        masques.forEach(m => { m.style.overflow = m.dataset.ov; });
-        if(heroBox) heroBox.style.overflow = heroBox.dataset.ov;
-      });
-    } else if(lines.length){
-      /* repli : si le decoupage n'a pas pu se faire, on garde la montee
-         d'origine. y:0 est INDISPENSABLE — GSAP lit le translateY(112%)
-         comme y = 110.25px et l'AJOUTE au yPercent. */
-      tl.fromTo(lines,
-        { yPercent: 112, y: 0 },
-        { yPercent: 0, y: 0, duration: 0.95 * D, stagger: 0.13 * D, ease: 'power4.out' },
-        'scene');
-    }
-    if(para){
-      tl.fromTo(para,
-        { opacity: 0, y: 16 * u * M },
-        { opacity: 1, y: 0, duration: 0.75 * D },
-        'scene+=' + (0.30 * D));
-    }
-    if(btn){
-      tl.fromTo(btn,
-        { opacity: 0, y: 14 * u * M },
-        { opacity: 1, y: 0, duration: 0.75 * D },
-        'scene+=' + (0.44 * D));
-    }
+    /* Le sous-texte et le bouton ne sont plus animes par la timeline : ils
+       sont accroches au defilement, avec le titre (voir poseLettres). Deux
+       tetes de lecture pour trois elements de la meme colonne, c'etait la
+       garantie de les voir se croiser. */
 
     /* --- filets de securite : la landing doit s'ouvrir quoi qu'il arrive --- */
     const safety = setTimeout(() => { if(!this.opened) tl.progress(1); }, 6500);
@@ -2062,6 +2265,11 @@ export default class PixoveryPage extends React.Component {
        hero se decollait au moment precis ou l'ampoule montait : la sequence
        n'avait pas de fin, elle etait coupee. */
     const NAIT = 0.13, TOUR0 = 0.06, SCAN_A = 0.16, SCAN_B = 0.52, FIN = 0.62;
+    /* La hauteur de defilement a laquelle la sequence est finie : rotation
+       achevee, ampoule levee. C'est la que « Accueil » doit poser la page —
+       pas en haut, ou la figurine n'existe pas encore. Mesuree a l'appel,
+       jamais en cache : la course depend de la hauteur de la fenetre. */
+    this.heroPoseY = () => Math.round(course() * FIN);
 
     /* Les deux planches : 76 images, 10 colonnes, tuiles 228×352. */
     const N = 76, COLS = 10, TW = 332, TH = 512;
@@ -2511,13 +2719,23 @@ export default class PixoveryPage extends React.Component {
           <div data-progress="1" aria-hidden="true" style={{position: "absolute", left: "0", right: "0", bottom: "0", height: "1px", background: "rgba(255,255,255,.07)", transition: "opacity .4s ease"}}><i data-bar="1" style={{display: "block", height: "100%", width: "0", background: "linear-gradient(90deg,var(--violet-b),var(--pink))"}}></i></div>
           <div style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative", display: "grid", alignItems: "center", gridTemplateColumns: "1fr auto 1fr", boxSizing: "border-box", paddingLeft: "calc(82*var(--u))", paddingRight: "calc(82*var(--u))"}}>
             <span style={{display: "block", lineHeight: "0"}}><img src="/assets/logo-pixovery.webp" alt="Pixovery" style={{display: "block", height: "calc(22*var(--u))", width: "auto"}} width="1106" height="220" decoding="async" /></span>
-            <nav data-nav="1" style={{display: "flex", alignItems: "center", justifyContent: "center", gap: "calc(22*var(--u))"}}>
+            <nav data-nav="1" onClick={() => { document.documentElement.classList.remove('menu-ouvert'); const b = document.querySelector('[data-burger]'); if(b) b.setAttribute('aria-expanded','false'); }} style={{display: "flex", alignItems: "center", justifyContent: "center", gap: "calc(22*var(--u))"}}>
               <a href="#accueil" style={{position: "relative", fontSize: "calc(9.5*var(--tu))", fontWeight: "500", letterSpacing: "calc(1.1*var(--u))", textTransform: "uppercase", color: "var(--nav)", transition: "color .25s ease"}}>Accueil<i style={{position: "absolute", left: "0", right: "0", bottom: "calc(-6*var(--u))", height: "1px", background: "var(--pink-b)", transform: "scaleX(0)", transformOrigin: "right", transition: "transform .45s cubic-bezier(.16,1,.3,1)"}}></i></a>
               <a href="#services" style={{position: "relative", fontSize: "calc(9.5*var(--tu))", fontWeight: "500", letterSpacing: "calc(1.1*var(--u))", textTransform: "uppercase", color: "var(--nav)", transition: "color .25s ease"}}>Services<i style={{position: "absolute", left: "0", right: "0", bottom: "calc(-6*var(--u))", height: "1px", background: "var(--pink-b)", transform: "scaleX(0)", transformOrigin: "right", transition: "transform .45s cubic-bezier(.16,1,.3,1)"}}></i></a>
               <a href="#portfolio" style={{position: "relative", fontSize: "calc(9.5*var(--tu))", fontWeight: "500", letterSpacing: "calc(1.1*var(--u))", textTransform: "uppercase", color: "var(--nav)", transition: "color .25s ease"}}>Portfolio<i style={{position: "absolute", left: "0", right: "0", bottom: "calc(-6*var(--u))", height: "1px", background: "var(--pink-b)", transform: "scaleX(0)", transformOrigin: "right", transition: "transform .45s cubic-bezier(.16,1,.3,1)"}}></i></a>
               <a href="#apropos" style={{position: "relative", fontSize: "calc(9.5*var(--tu))", fontWeight: "500", letterSpacing: "calc(1.1*var(--u))", textTransform: "uppercase", color: "var(--nav)", transition: "color .25s ease"}}>À propos<i style={{position: "absolute", left: "0", right: "0", bottom: "calc(-6*var(--u))", height: "1px", background: "var(--pink-b)", transform: "scaleX(0)", transformOrigin: "right", transition: "transform .45s cubic-bezier(.16,1,.3,1)"}}></i></a>
               <a href="#contact" style={{position: "relative", fontSize: "calc(9.5*var(--tu))", fontWeight: "500", letterSpacing: "calc(1.1*var(--u))", textTransform: "uppercase", color: "var(--nav)", transition: "color .25s ease"}}>Contact<i style={{position: "absolute", left: "0", right: "0", bottom: "calc(-6*var(--u))", height: "1px", background: "var(--pink-b)", transform: "scaleX(0)", transformOrigin: "right", transition: "transform .45s cubic-bezier(.16,1,.3,1)"}}></i></a>
             </nav>
+              {/* Menu mobile. Le bouton n'existe visuellement que sous 769px
+                  (CSS : bloc « MENU MOBILE » de global.css). Il bascule la classe
+                  menu-ouvert sur <html> — pas d'etat React, donc aucun rendu
+                  supplementaire et aucune interaction avec les methodes de la
+                  classe. Le onClick du <nav> ci-dessus la retire : choisir une
+                  entree ferme le panneau et laisse l'ancre faire son travail. */}
+              <button data-burger="1" type="button" aria-label="Menu" aria-expanded="false"
+                onClick={(e) => { const ouvert = document.documentElement.classList.toggle('menu-ouvert'); e.currentTarget.setAttribute('aria-expanded', ouvert ? 'true' : 'false'); }}>
+                <i></i><i></i><i></i>
+              </button>
           </div>
         </header>
 
@@ -2540,7 +2758,7 @@ export default class PixoveryPage extends React.Component {
                 Bienvenue sur Pixovery.<br />
                 Création graphique &amp; direction artistique
               </p>
-              <a href="#portfolio" data-heroline="btn" style={{display: "inline-flex", alignItems: "center", justifyContent: "space-between", background: "linear-gradient(176deg, #F4237E 0%, #E2006B 46%, #CC005F 100%)", color: "#fff", borderRadius: "calc(12*var(--u))", whiteSpace: "nowrap", fontSize: "calc(12*var(--tu))", fontWeight: "600", letterSpacing: "calc(.8*var(--u))", textTransform: "uppercase", marginTop: "calc(38*var(--u))", minWidth: "calc(223*var(--u))", height: "calc(44*var(--u))", padding: "0 calc(24*var(--u))", opacity: "0", transform: "translate(var(--mx,0px),calc(16*var(--u)))", transition: "opacity .9s ease .58s, transform .9s cubic-bezier(.16,1,.3,1) .58s, background .25s ease, box-shadow .3s cubic-bezier(.16,1,.3,1)"}}>Voir mes projets <span style={{marginLeft: "calc(14*var(--u))", fontSize: "calc(13*var(--tu))", lineHeight: "1"}}>→</span></a>
+              <a href="#portfolio" data-heroline="btn" style={{display: "inline-flex", alignItems: "center", justifyContent: "space-between", background: "#E2006B", color: "#fff", borderRadius: "calc(12*var(--u))", whiteSpace: "nowrap", fontSize: "calc(12*var(--tu))", fontWeight: "600", letterSpacing: "calc(.8*var(--u))", textTransform: "uppercase", marginTop: "calc(38*var(--u))", minWidth: "calc(223*var(--u))", height: "calc(44*var(--u))", padding: "0 calc(24*var(--u))", opacity: "0", transform: "translate(var(--mx,0px),calc(16*var(--u)))", transition: "opacity .9s ease .58s, transform .9s cubic-bezier(.16,1,.3,1) .58s, background .25s ease, box-shadow .3s cubic-bezier(.16,1,.3,1)"}}>Voir mes projets <span style={{marginLeft: "calc(14*var(--u))", fontSize: "calc(13*var(--tu))", lineHeight: "1"}}>→</span></a>
             </div>
 
             <div data-herovisual="1" style={{position: "absolute", left: "calc(431*var(--u))", top: "50%", width: "calc(566*var(--u))", height: "calc(566*var(--u))", transform: "translate(var(--px,0px), calc(-50% + var(--py,0px))) scale(var(--sc,1))", willChange: "transform"}}>
@@ -2565,6 +2783,19 @@ export default class PixoveryPage extends React.Component {
               <i data-ampoule="1" aria-hidden="true"></i>
             </div>
 
+          {/* L'INVITE A DEFILER. Tout le hero est desormais pilote par le
+              scroll : au premier pixel, la scene est vide. Sans un signe
+              explicite, on peut croire que la page n'a pas fini de charger.
+              Elle s'efface d'elle-meme des les premiers pour cent — une
+              invite qui reste affichee pendant qu'on defile devient un
+              element de decor, et on cesse de la voir. */}
+          <i data-cue="1" aria-hidden="true" style={{position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: "calc(12*var(--u))", zIndex: "8", pointerEvents: "none", opacity: "1"}}>
+            <svg width="21" height="33" viewBox="0 0 21 33" fill="none">
+              <rect x="1" y="1" width="19" height="31" rx="9.5" stroke="rgba(255,255,255,.42)" strokeWidth="1.4" />
+              <circle className="cueBille" cx="10.5" cy="9.5" r="2.4" fill="#fff" />
+            </svg>
+            <span style={{fontSize: "calc(9*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", textTransform: "uppercase", color: "rgba(255,228,203,.55)"}}>Scroll</span>
+          </i>
           </div>
         </section>
         </div>
@@ -2583,31 +2814,30 @@ export default class PixoveryPage extends React.Component {
             <div data-svcrail="1" style={{display: "flex", width: "400vw", willChange: "transform"}}>
               <article data-svc="1" data-panneau="1" style={{flex: "0 0 100vw", width: "100vw", height: "100vh", position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(240*var(--u))", gridAutoRows: "min-content", alignContent: "center", alignItems: "center", columnGap: "calc(50*var(--u))", padding: "calc(150*var(--u)) calc((100vw - 1024*var(--u))/2 + 82*var(--u)) calc(120*var(--u))", boxSizing: "border-box"}}>
                 <i data-svcwash="1" style={{position: "absolute", left: "0", right: "0", top: "0", bottom: "0", zIndex: "0", background: "radial-gradient(ellipse calc(300*var(--u)) calc(330*var(--u)) at calc(50% + 315*var(--u)) calc(50% + 15*var(--u)), rgba(143,43,255,.26) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.045) 62%, rgba(0,0,0,0) 100%)", opacity: "0", transition: "opacity 1s ease"}}></i>
-                <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(6*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>01</span>
+                <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(16*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>01</span>
                 <h3 data-svch="1" style={{position: "relative", zIndex: "1", margin: "0", fontWeight: "700", fontSize: "calc(38*var(--tu))", lineHeight: "1.04", color: "#fff", letterSpacing: "calc(-.6*var(--u))", gridColumn: "1", margin: "0 0 calc(18*var(--u))", transition: "transform .55s cubic-bezier(.16,1,.3,1)"}}>Identité visuelle &amp; logo</h3>
                 <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong>Je crée des identités visuelles qui rendent les marques immédiatement reconnaissables.</strong> Je conçois votre logo et l’ensemble de votre univers graphique : palette de couleurs, typographies, éléments graphiques et direction artistique. Chaque détail est pensé pour créer une identité cohérente, distinctive et facilement déclinable sur vos supports de communication.</p>
                 <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "0s"}}><span data-floppy="1" style={{animationDelay: "0s"}}><img src="/assets/floppy/floppy-identite-visuelle.webp" alt="" style={{opacity: "1", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
               </article>
               <article data-svc="1" data-panneau="1" style={{flex: "0 0 100vw", width: "100vw", height: "100vh", position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(240*var(--u))", gridAutoRows: "min-content", alignContent: "center", alignItems: "center", columnGap: "calc(50*var(--u))", padding: "calc(150*var(--u)) calc((100vw - 1024*var(--u))/2 + 82*var(--u)) calc(120*var(--u))", boxSizing: "border-box"}}>
                 <i data-svcwash="1" style={{position: "absolute", left: "0", right: "0", top: "0", bottom: "0", zIndex: "0", background: "radial-gradient(ellipse calc(300*var(--u)) calc(330*var(--u)) at calc(50% + 315*var(--u)) calc(50% + 15*var(--u)), rgba(143,43,255,.26) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.045) 62%, rgba(0,0,0,0) 100%)", opacity: "0", transition: "opacity 1s ease"}}></i>
-                <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(6*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>02</span>
+                <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(16*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>02</span>
                 <h3 data-svch="1" style={{position: "relative", zIndex: "1", margin: "0", fontWeight: "700", fontSize: "calc(38*var(--tu))", lineHeight: "1.04", color: "#fff", letterSpacing: "calc(-.6*var(--u))", gridColumn: "1", margin: "0 0 calc(18*var(--u))", transition: "transform .55s cubic-bezier(.16,1,.3,1)"}}>Design graphique &amp; print</h3>
-                <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong data-start="568" data-end="654">Je conçois des supports graphiques qui donnent du caractère à votre communication.</strong><br data-start="654" data-end="657" />
-      Affiches, flyers, packaging, cartes de visite ou contenus pour les réseaux sociaux : chaque création est pensée pour attirer l’attention et rester cohérente avec votre identité.</p>
+                <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong>Je conçois des supports graphiques qui donnent du caractère à votre communication.</strong> Affiches, flyers, packaging, cartes de visite, contenus pour les réseaux sociaux : chaque création est pensée pour attirer l’attention et rester cohérente avec votre identité.</p>
                 <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "-2.4s"}}><span data-floppy="1" style={{animationDelay: "-.35s"}}><img src="/assets/floppy/floppy-print.webp" alt="" style={{opacity: "1", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
               </article>
               <article data-svc="1" data-panneau="1" style={{flex: "0 0 100vw", width: "100vw", height: "100vh", position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(240*var(--u))", gridAutoRows: "min-content", alignContent: "center", alignItems: "center", columnGap: "calc(50*var(--u))", padding: "calc(150*var(--u)) calc((100vw - 1024*var(--u))/2 + 82*var(--u)) calc(120*var(--u))", boxSizing: "border-box"}}>
                 <i data-svcwash="1" style={{position: "absolute", left: "0", right: "0", top: "0", bottom: "0", zIndex: "0", background: "radial-gradient(ellipse calc(300*var(--u)) calc(330*var(--u)) at calc(50% + 315*var(--u)) calc(50% + 15*var(--u)), rgba(143,43,255,.26) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.045) 62%, rgba(0,0,0,0) 100%)", opacity: "0", transition: "opacity 1s ease"}}></i>
-                <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(6*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>03</span>
+                <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(16*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>03</span>
                 <h3 data-svch="1" style={{position: "relative", zIndex: "1", margin: "0", fontWeight: "700", fontSize: "calc(38*var(--tu))", lineHeight: "1.04", color: "#fff", letterSpacing: "calc(-.6*var(--u))", gridColumn: "1", margin: "0 0 calc(18*var(--u))", transition: "transform .55s cubic-bezier(.16,1,.3,1)"}}>Web design</h3>
-                <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong data-start="856" data-end="929">Je conçois des sites web qui donnent envie de découvrir votre marque.&nbsp;</strong>Site vitrine, ou interface sur mesure : je travaille le design, l’expérience utilisateur et la structure de chaque page pour créer une expérience claire, fluide et mémorable.</p>
+                <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong>Je conçois des sites web qui donnent envie de découvrir votre marque.</strong> Site vitrine ou interface sur mesure : je travaille le design, l’expérience utilisateur et la structure de chaque page pour créer une expérience claire, fluide et mémorable.</p>
                 <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "-4.8s"}}><span data-floppy="1" style={{animationDelay: "-.7s"}}><img src="/assets/floppy/floppy-web.webp" alt="" style={{opacity: "1", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
               </article>
               <article data-svc="1" data-panneau="1" style={{flex: "0 0 100vw", width: "100vw", height: "100vh", position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(240*var(--u))", gridAutoRows: "min-content", alignContent: "center", alignItems: "center", columnGap: "calc(50*var(--u))", padding: "calc(150*var(--u)) calc((100vw - 1024*var(--u))/2 + 82*var(--u)) calc(120*var(--u))", boxSizing: "border-box"}}>
                 <i data-svcwash="1" style={{position: "absolute", left: "0", right: "0", top: "0", bottom: "0", zIndex: "0", background: "radial-gradient(ellipse calc(300*var(--u)) calc(330*var(--u)) at calc(50% + 315*var(--u)) calc(50% + 15*var(--u)), rgba(143,43,255,.26) 0%, rgba(122,1,255,.13) 34%, rgba(122,1,255,.045) 62%, rgba(0,0,0,0) 100%)", opacity: "0", transition: "opacity 1s ease"}}></i>
-                <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(6*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>04</span>
+                <span data-svcnum="1" style={{position: "relative", zIndex: "1", gridColumn: "1", fontWeight: "800", fontSize: "calc(110*var(--tu))", lineHeight: ".8", letterSpacing: "calc(-3*var(--u))", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.14)", display: "block", marginBottom: "calc(16*var(--u))", transition: "-webkit-text-stroke-color .8s ease"}}>04</span>
                 <h3 data-svch="1" style={{position: "relative", zIndex: "1", margin: "0", fontWeight: "700", fontSize: "calc(38*var(--tu))", lineHeight: "1.04", color: "#fff", letterSpacing: "calc(-.6*var(--u))", gridColumn: "1", margin: "0 0 calc(18*var(--u))", transition: "transform .55s cubic-bezier(.16,1,.3,1)"}}>Illustration</h3>
-                <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong data-start="1143" data-end="1242">Je crée des illustrations sur mesure pour donner une personnalité unique à votre communication.</strong><br data-start="1242" data-end="1245" />
+                <p data-svcp="1" style={{position: "relative", zIndex: "1", margin: "0", fontSize: "calc(14*var(--tu))", lineHeight: "calc(24*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(390*var(--u))", gridColumn: "1", transition: "color .45s ease"}}><strong>Je crée des illustrations sur mesure pour donner une personnalité unique à votre communication.</strong><br />
       Personnages, visuels de marque, illustrations éditoriales ou univers graphiques : je dessine des images adaptées à votre projet, plutôt que de vous proposer des visuels génériques.<br /></p>
                 <div data-svcico="1" style={{position: "relative", zIndex: "1", width: "calc(230*var(--u))", height: "calc(230*var(--u))", gridColumn: "2", gridRow: "1 / span 3", alignSelf: "center", justifySelf: "end", perspective: "1200px", willChange: "transform"}}><span data-floppydepth="1"><span data-floppyfloat="1" style={{animationDelay: "-7.2s"}}><span data-floppy="1" style={{animationDelay: "-1.05s"}}><img src="/assets/floppy/floppy-illustration.webp" alt="" style={{opacity: "1", transition: "transform .5s cubic-bezier(.22,1,.36,1), opacity .45s ease"}} width="576" height="576" decoding="async" loading="eager" fetchpriority="low" /></span></span></span></div>
               </article>
@@ -2636,7 +2866,7 @@ export default class PixoveryPage extends React.Component {
             </header>
 
             <div data-galtrack="1" style={{display: "flex", alignItems: "center", gap: "calc(46*var(--u))", padding: "calc(46*var(--u)) calc(82*var(--u)) 0", willChange: "transform", cursor: "grab", touchAction: "pan-y"}}>
-              <article data-piece="violet" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+              <article data-piece="violet" data-projet="/projets/kabuki-sushi.html" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
                 <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>01</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-restaurant-sushi-kabuki-sushi.webp" alt="Identité visuelle Kabuki Sushi : logo mascotte, enseigne, packaging et menu de restaurant japonais" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
@@ -2881,7 +3111,7 @@ export default class PixoveryPage extends React.Component {
               <h2 style={{margin: "0", gridColumn: "1 / -1", fontWeight: "800", fontSize: "calc(46*var(--tu))", lineHeight: "calc(45*var(--tu))", textTransform: "uppercase", color: "#fff", letterSpacing: "calc(-.4*var(--u))"}}>Mon <em style={{fontStyle: "normal", color: "var(--violet-b)"}}>processus</em></h2>
             </header>
 
-            <div data-procrail="1" style={{display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(386*var(--u))", columnGap: "calc(60*var(--u))", alignItems: "start", padding: "0 calc(82*var(--u))", marginTop: "calc(64*var(--u))"}}>
+            <div data-procrail="1" style={{display: "grid", gridTemplateColumns: "minmax(0,1fr) calc(338*var(--u))", columnGap: "calc(60*var(--u))", alignItems: "start", padding: "0 calc(82*var(--u))", marginTop: "calc(64*var(--u))"}}>
             <ol data-steps="1" style={{position: "relative", listStyle: "none", margin: "0", padding: "0"}}>
               <i data-draw="1" style={{position: "absolute", left: "calc(38*var(--u))", top: "calc(38*var(--u))", width: "1px", height: "calc(100% - 76*var(--u))", background: "var(--pink)", transform: "scaleY(var(--draw,0))", transformOrigin: "top", transition: "transform .1s linear"}}></i>
               <li data-step="1" style={{position: "relative", display: "grid", gridTemplateColumns: "calc(76*var(--u)) minmax(0,1fr)", columnGap: "calc(40*var(--u))", alignItems: "start", padding: "calc(30*var(--u)) 0"}}>
@@ -2914,11 +3144,15 @@ export default class PixoveryPage extends React.Component {
               </li>
             </ol>
 
-              {/* Le tour : 72 poses a 5 degres, deux planches de 36 cases.
-                  Collant, il tourne pendant qu'on lit les quatre etapes.
-                  mix-blend-mode:screen -> le fond noir des images disparait. */}
-              <div data-tour="1" style={{position: "sticky", top: "calc(50vh - 203*var(--u))", justifySelf: "end", width: "calc(386*var(--u))", height: "calc(386*var(--u))", willChange: "opacity, transform"}} aria-hidden="true">
-                <canvas data-spin="1" width="576" height="576" style={{position: "absolute", inset: "0", width: "100%", height: "100%", mixBlendMode: "screen"}}></canvas>
+              {/* La figurine du Processus. 72 poses sur deux planches webp.
+                  Collante, elle tourne pendant qu'on lit les quatre etapes.
+                  mix-blend-mode:screen -> le fond noir des images disparait.
+
+                  Elle ne sort QUE sur mobile : masquee en CSS sous 769 px, et
+                  spin() refuse d'y demarrer, sinon les deux planches (1,3 Mo)
+                  se telechargeraient sur telephone pour un element invisible. */}
+              <div data-tour="1" style={{position: "sticky", top: "calc(50vh - 242*var(--u))", justifySelf: "end", width: "calc(338*var(--u))", height: "calc(484*var(--u))", willChange: "opacity, transform"}} aria-hidden="true">
+                <canvas data-spin="1" width="448" height="640" style={{position: "absolute", inset: "0", width: "100%", height: "100%"}}></canvas>
               </div>
             </div>
           </div>
@@ -2959,8 +3193,15 @@ export default class PixoveryPage extends React.Component {
           </div>
           <div data-contactrow="1" style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative", display: "flex", alignItems: "center", gap: "calc(44*var(--u))", paddingLeft: "calc(82*var(--u))", paddingRight: "calc(82*var(--u))"}}>
             <div data-floater="1" data-par="72" data-contactphoto="1" style={{flex: "none", width: "calc(470*var(--u))", position: "relative", transform: "translateY(var(--ty,0px))", willChange: "transform"}}>
-              <i aria-hidden="true" style={{position: "absolute", left: "6%", right: "6%", top: "74%", height: "30%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(52% 50% at 50% 52%, rgba(143,43,255,.20) 0%, rgba(122,1,255,.09) 38%, rgba(122,1,255,.03) 60%, rgba(0,0,0,0) 78%)", filter: "blur(calc(16*var(--u)))"}}></i>
-              <img src="/assets/img10.webp" alt="Pixovery — contact" style={{position: "relative", zIndex: "1", width: "100%", height: "auto", mixBlendMode: "screen", WebkitMaskImage: "linear-gradient(to bottom,#000 0%,#000 88%,rgba(0,0,0,.92) 92%,rgba(0,0,0,.60) 95.5%,rgba(0,0,0,.24) 98%,rgba(0,0,0,0) 100%)", maskImage: "linear-gradient(to bottom,#000 0%,#000 88%,rgba(0,0,0,.92) 92%,rgba(0,0,0,.60) 95.5%,rgba(0,0,0,.24) 98%,rgba(0,0,0,0) 100%)"}} width="1000" height="1023" decoding="async" loading="lazy" />
+              {/* La lueur au sol. Elle debordait : posee a 74 % de haut sur 30 %, large
+                  de 88 %, elle eclairait le BUREAU DEVANT la machine et pas son socle.
+                  Et comme l'image est en mix-blend-mode:screen, le plateau sombre de la
+                  photo est quasiment transparent : la lueur le traversait entierement.
+                  Ce qu'on lisait sous le clavier n'etait donc pas un reflet mais un
+                  nuage violet sans forme. Resserree sous la machine, et affaiblie. */}
+              <i aria-hidden="true" style={{position: "absolute", left: "6%", right: "6%", top: "76%", height: "30%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(50% 46% at 50% 34%, rgba(158,74,255,.30) 0%, rgba(126,10,255,.14) 38%, rgba(122,1,255,.05) 62%, rgba(0,0,0,0) 82%)", filter: "blur(calc(22*var(--u)))"}}></i>
+              <i aria-hidden="true" style={{position: "absolute", left: "22%", right: "22%", top: "84%", height: "7%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(50% 50% at 50% 50%, rgba(255,45,190,.20) 0%, rgba(226,0,107,.07) 46%, rgba(0,0,0,0) 78%)", filter: "blur(calc(14*var(--u)))"}}></i>
+              <img src="/assets/img10.webp" alt="Pixovery — contact" style={{position: "relative", zIndex: "1", width: "100%", height: "auto", mixBlendMode: "screen", WebkitMaskImage: "linear-gradient(to bottom,#000 0%,#000 89%,rgba(0,0,0,.55) 93%,rgba(0,0,0,.14) 96%,rgba(0,0,0,0) 98%)", maskImage: "linear-gradient(to bottom,#000 0%,#000 89%,rgba(0,0,0,.55) 93%,rgba(0,0,0,.14) 96%,rgba(0,0,0,0) 98%)"}} width="1000" height="1023" decoding="async" loading="lazy" />
               <div aria-hidden="true" style={{position: "absolute", left: "28.5%", top: "44.9%", width: "28.8%", height: "17.1%", overflow: "hidden", display: "flex", alignItems: "center", pointerEvents: "none", zIndex: "3", transformOrigin: "50% 50%", transform: "rotate(3.2deg)", animation: "crt-flicker 3.4s steps(1) infinite"}}>
                 <div style={{display: "flex", flex: "none", animation: "crt-scroll 5.5s linear infinite", willChange: "transform"}}>
                   <span style={{fontFamily: "'VT323',monospace", fontSize: "calc(59*var(--tu))", lineHeight: "1", letterSpacing: "calc(-0.5*var(--u))", color: "#3A0233", paddingRight: "calc(26*var(--u))", whiteSpace: "nowrap", wordSpacing: "calc(-6*var(--u))"}}>SO CALL ME MAYBE</span>

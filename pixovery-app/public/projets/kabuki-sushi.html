@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kabuki Sushi — identité visuelle · Pixovery</title>
+<meta name="description" content="Identité visuelle pour Kabuki Sushi : logo mascotte, charte graphique, enseigne, packaging et supports imprimés.">
+<link rel="canonical" href="https://www.pixovery.com/projets/kabuki-sushi.html">
+<meta property="og:title" content="Kabuki Sushi — identité visuelle">
+<meta property="og:image" content="https://www.pixovery.com/assets/projets/kabuki-sushi/logo.webp">
+
+<!-- ======================================================================
+     GABARIT D'ÉTUDE DE CAS — Pixovery
+     Quatre blocs, pas un de plus : le logo, les couleurs, les applications,
+     l'appel a l'action. Pour un nouveau projet : dupliquer, changer les
+     trois --p-* du :root, le nom, et le dossier d'images.
+
+     AUCUN TEXTE DE PRESENTATION pour l'instant — les emplacements sont la,
+     en commentaire, en attendant ceux de Redha.
+====================================================================== -->
+
+<style>
+@font-face{font-family:'Neue Haas Display';src:url(/assets/fonts/nhd-500.woff2) format('woff2');font-weight:500;font-display:swap}
+@font-face{font-family:'Neue Haas Display';src:url(/assets/fonts/nhd-700.woff2) format('woff2');font-weight:700;font-display:swap}
+@font-face{font-family:'Neue Haas Display';src:url(/assets/fonts/nhd-800.woff2) format('woff2');font-weight:800 900;font-display:swap}
+
+:root{
+  --noir:#050505; --txt:#EDEDED; --gris:#8E9095; --trait:rgba(255,255,255,.10);
+  --rose:#E2006B;
+  /* la charte du client — les seules valeurs a changer par projet */
+  --p-1:#B50610; --p-2:#0B0B0B; --p-3:#FFFFFF;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--noir);color:var(--txt);
+  font-family:'Neue Haas Display',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  font-weight:500;-webkit-font-smoothing:antialiased;
+  font-size:clamp(15px,1.05vw,17px);line-height:1.6}
+img{display:block;max-width:100%;height:auto}
+a{color:inherit}
+.wrap{width:min(1100px,90vw);margin:0 auto}
+
+/* la barre */
+.bar{position:sticky;top:0;z-index:9;background:rgba(5,5,5,.75);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--trait)}
+.bar .wrap{display:flex;align-items:center;justify-content:space-between;height:60px;gap:16px}
+.retour,.cta{text-decoration:none;font-size:12px;letter-spacing:1.2px;text-transform:uppercase}
+.retour{color:var(--gris);transition:color .25s ease}
+.retour:hover{color:#fff}
+.cta{font-weight:700;background:var(--rose);color:#fff;padding:9px 18px;border-radius:8px;
+  transition:background .2s ease}
+.cta:hover{background:#FF2C86}
+
+/* 1. le logo, en grand, et c'est tout */
+header{padding:clamp(50px,8vw,96px) 0 0;text-align:center}
+.fil{font-size:11.5px;letter-spacing:2px;text-transform:uppercase;color:var(--gris);margin:0 0 18px}
+.fil b{color:var(--p-1)}
+h1{margin:0;font-weight:800;letter-spacing:-.02em;line-height:.95;
+  font-size:clamp(44px,7.6vw,96px);text-transform:uppercase}
+.phrase{margin:22px auto 0;max-width:48ch;color:rgba(255,255,255,.68);
+  font-size:clamp(15.5px,1.25vw,19px)}
+.scene{margin:clamp(36px,5vw,60px) 0 0;background:var(--p-2);border:1px solid var(--trait);
+  border-radius:12px;padding:clamp(30px,6vw,80px);display:grid;place-items:center}
+.scene img{width:min(600px,90%)}
+
+section{padding:clamp(50px,7vw,92px) 0}
+h2{margin:0 0 26px;font-weight:800;letter-spacing:-.01em;font-size:clamp(22px,2.4vw,30px)}
+
+/* 2. les couleurs */
+.nuancier{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+.teinte{border:1px solid var(--trait);border-radius:10px;overflow:hidden}
+.teinte .pave{height:118px}
+.teinte .info{padding:14px 16px;display:flex;justify-content:space-between;gap:10px;
+  font-size:13.5px}
+.teinte code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--gris);font-size:12.5px}
+
+/* 3. les applications */
+.grille{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
+.g{grid-column:span 6;border-radius:10px;overflow:hidden;background:var(--p-2);
+  border:1px solid var(--trait)}
+.g.large{grid-column:span 12}
+@media(max-width:760px){.g{grid-column:span 12}}
+
+/* 4. l'appel a l'action */
+.final{text-align:center;border-top:1px solid var(--trait)}
+.final p{margin:0 auto 26px;max-width:44ch;color:rgba(255,255,255,.68)}
+.gros{display:inline-block;text-decoration:none;background:var(--rose);color:#fff;font-weight:700;
+  text-transform:uppercase;letter-spacing:1.1px;font-size:13px;padding:16px 30px;border-radius:10px;
+  transition:background .2s ease}
+.gros:hover{background:#FF2C86}
+footer{border-top:1px solid var(--trait);padding:24px 0;font-size:12.5px;color:var(--gris)}
+footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+footer a{text-decoration:none}
+footer a:hover{color:#fff}
+</style>
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="retour" href="/#portfolio">← Portfolio</a>
+  <a class="cta" href="/#contact">Discutons-en</a>
+</div></div>
+
+<header>
+  <div class="wrap">
+    <p class="fil"><b>Identité visuelle</b> — 2026</p>
+    <h1>Kabuki Sushi</h1>
+    <!-- LA PHRASE DU PROJET — vide en attendant tes textes.
+         Décommenter et remplir :
+    <p class="phrase">…</p>
+    -->
+    <div class="scene">
+      <img src="/assets/projets/kabuki-sushi/logo.webp"
+           alt="Logo Kabuki Sushi : mascotte d'acteur kabuki entre les kanji 寿司" width="460" height="375">
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>Couleurs</h2>
+    <div class="nuancier">
+      <div class="teinte">
+        <div class="pave" style="background:var(--p-1)"></div>
+        <div class="info"><span>Rouge</span><code>#B50610</code></div>
+      </div>
+      <div class="teinte">
+        <div class="pave" style="background:var(--p-2)"></div>
+        <div class="info"><span>Noir</span><code>#0B0B0B</code></div>
+      </div>
+      <div class="teinte">
+        <div class="pave" style="background:var(--p-3)"></div>
+        <div class="info"><span>Blanc</span><code>#FFFFFF</code></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Applications</h2>
+    <div class="grille">
+      <div class="g"><img src="/assets/projets/kabuki-sushi/enseigne.webp" alt="Enseigne lumineuse Kabuki Sushi" loading="lazy"></div>
+      <div class="g"><img src="/assets/projets/kabuki-sushi/sac.webp" alt="Sac kraft noir à motif d'icônes rouges" loading="lazy"></div>
+      <div class="g"><img src="/assets/projets/kabuki-sushi/boite.webp" alt="Boîte à emporter Kabuki Sushi" loading="lazy"></div>
+      <div class="g"><img src="/assets/projets/kabuki-sushi/menu.webp" alt="Menu imprimé Kabuki Sushi" loading="lazy"></div>
+      <div class="g"><img src="/assets/projets/kabuki-sushi/cartes.webp" alt="Cartes de visite Kabuki Sushi" loading="lazy"></div>
+      <div class="g"><img src="/assets/projets/kabuki-sushi/stickers.webp" alt="Stickers de fermeture Kabuki Sushi" loading="lazy"></div>
+      <div class="g large"><img src="/assets/projets/kabuki-sushi/valeurs.webp" alt="Pictogrammes : tradition, fraîcheur, authenticité, passion" loading="lazy"></div>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <h2>Un projet comme celui-ci ?</h2>
+    <a class="gros" href="/#contact">Parlons-en →</a>
+  </div>
+</section>
+
+<footer><div class="wrap">
+  <span>© 2026 Pixovery</span>
+  <a href="/#portfolio">Autres projets →</a>
+</div></footer>
+
+</body>
+</html>

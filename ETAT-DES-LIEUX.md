@@ -1,4 +1,4 @@
-# État des lieux — 22 août 2026
+# État des lieux — 24 août 2026 (fin de journée)
 
 Point de reprise. La carte technique reste dans `CLAUDE.md` ; ce fichier dit
 **où on en est** et **ce qu'il ne faut pas refaire**.
@@ -11,15 +11,15 @@ Le dépôt n'a toujours qu'**un seul commit**. Tout le travail est sur le disque
 cd "$HOME\OneDrive\Bureau\pixonaute"
 git add pixovery-app/src/components/PixoveryPage.jsx `
         pixovery-app/src/styles/global.css `
-        pixovery-app/public/assets/perso-tour-v2.webp `
-        pixovery-app/public/assets/perso-filaire-v2.webp `
-        pixovery-app/public/assets/pot-solide.webp `
+        pixovery-app/public/projets/kabuki-sushi.html `
+        pixovery-app/public/assets/projets/kabuki-sushi `
+        pixovery-app/public/assets/fonts `
         ETAT-DES-LIEUX.md
-git commit -m "Hero : piste collante, rotation du perso, scan filaire, chute des lettres"
+git commit -m "Hero pilote au scroll, gabarit d'etude de cas, Newake, formulaire creuse"
 ```
 
 Jamais `git add -A` : ça embarquerait `Pixovery Website.html` (6,6 Mo),
-`_to_delete/`, `uploads/`, `screenshots/`.
+`_to_delete/`, `uploads/`, `screenshots/`, et les bancs d'essai.
 
 ## Pour voir le résultat
 
@@ -30,160 +30,210 @@ npm run dev
 Puis **`localhost:5173/?motion=full`**. Le paramètre est obligatoire :
 « réduire les animations » est actif sur cette machine.
 
-Copie compilée et hébergée du hero (à jour) :
-https://claude.ai/code/artifact/7917f635-1a46-4df2-bd5e-7c49d3b8e837
-
 ---
 
-## Ce qui a changé aujourd'hui
+# CE QUI A CHANGÉ LE 24 AOÛT
 
-### Le hero est COLLÉ dans une piste
+## 1. LE HERO EST ENTIÈREMENT PILOTÉ PAR LE SCROLL
 
-`[data-heropiste]` enveloppe la section, hauteur `100vh + var(--piste-hero, 300vh)`.
-`[data-hero]` est passé en `position:sticky; top:0` (le `position:relative` en
-ligne a été retiré du JSX, sinon il gagnait sur la CSS).
+C'est le changement structurant de la journée. Avant, le titre tombait sur une
+timeline GSAP au chargement. Maintenant **tout** ce que contient le hero suit
+la position de défilement — il n'y a plus qu'une seule tête de lecture.
 
-`heroScroll()` a été réétalonné sur la même course : calé sur `innerHeight`, la
-copie finissait sa montée dès le premier écran alors que tout le reste était
-encore collé.
+Dans `intro()`, la fonction `poseLettres()` (exposée en `this.poseTitre`) est
+appelée à chaque frame de scroll et pose, dans cet ordre :
 
-### `scanHero()` a été réécrit
-
-Il pilote maintenant toute la séquence depuis `scrollY / course()`. Répartition,
-en fractions de la course :
-
-| | de | à |
-|---|---|---|
-| naissance (fondu) | 0 | 0,13 |
-| rotation, 76 images | 0,06 | **0,62** |
-| balayage | 0,16 | 0,52 |
-| glitch | 0,64 | 1 |
-
-`FIN = 0.62` : la rotation s'achève **avant** le bout de la piste. Tout ce qui
-reste est un temps d'arrêt — la figurine tient sa pose, ampoule levée. Sans ça
-le hero se décollait à l'instant où l'ampoule montait : la séquence n'avait pas
-de fin, elle était coupée.
-
-### Les deux calques du perso sont des canvas
-
-`<canvas className="scanSolid" data-perso="plein">` et
-`<canvas className="scanWire" data-perso="fil">`, 550×550, qui valent toute la
-boîte. La tuile est dessinée dedans à `DX/DY/DW/DH` (42,636 % / 12,909 % /
-50,273 % / 77,455 %) — comme ça les masques `--sa/--sb` et `--ha..--hd`,
-exprimés en pourcentage de la boîte, **restent justes au pixel près**.
-
-Le mécanisme de masque du site n'a pas été remplacé, seulement rebranché.
-
-### Le pot ne se virtualise jamais
-
-`<img className="potSolide">`, hors des calques masqués. Extrait de
-`hero-scan-a` en ne gardant que sa composante de gauche.
-
-### La chute des lettres
-
-Dans `intro()`. `splitTitle()` pose `dy` (−290 à −380 %), `dr` (1,5 tour, un sens
-sur deux), `dl`. Le tween est une boucle **lettre par lettre**, pas un `fromTo`
-avec `stagger`.
-
-### Supprimé
-
-- L'allumage à l'intro : `const ALLUMAGE = false;` → `LUM = 0`. Le code est
-  intact. Il tenait à l'ancien perso, qui tenait une ampoule dès la première
-  image.
-- `[data-bulb]` et ses dix `[data-spark]`, les deux `[data-lens]`, et
-  `hero-cut-b` : tous calés sur la pose fixe de l'ancien personnage.
-
-### Ajouté en fin de séquence (classe `pose-tenue` sur `[data-herovisual]`)
-
-- **Reflets de lunettes** : trois couches (point spéculaire permanent, lustre
-  qui traverse, halo `box-shadow` qui déborde). Verre gauche à 57,62 %, droit à
-  70,80 % — ils n'ont pas la même largeur, la tête est vue de trois quarts.
-- **Ampoule** : halo qui respire (`ampouleLuit`) + 16 poussières de lumière
-  (`poussiere`), centre mesuré à 49,75 % / 37,87 %.
-- **Glitch** : tranches déplacées + séparation RVB par les filtres SVG
-  `#pxRouge` / `#pxCyan`.
-
----
-
-## Les assets
-
-| fichier | quoi |
+| élément | fenêtre (fraction de l'arrivée) |
 |---|---|
-| `perso-tour-v2.webp` | 76 images du solide, RVBA, tuiles **332×512**, 10 colonnes |
-| `perso-filaire-v2.webp` | les mêmes en filaire, **niveaux de gris** (l'intensité EST l'alpha) |
-| `pot-solide.webp` | le pot seul, 1100×1100 |
+| les lettres du titre | chacune la sienne, décalée par son rang |
+| le sous-texte | 0,70 → 0,94 |
+| le bouton | 0,82 → 1,00 |
+| le rideau noir (retrait) | 0 → 0,34 |
+| l'invite à défiler (retrait) | 0,14 → 0,44 |
 
-Sources : deux vidéos Kling. Le solide vient de la rotation + levée d'ampoule
-(121 images), le filaire du maillage (97 images).
+`ARRIVEE = 0.24` : toute l'arrivée tient dans les 24 premiers pour cent de la
+piste du hero. Reprise du pen GreenSock « containerAnimation SplitText » :
+rotation ±20°, décalage vertical, ease `back.out(1.2)`.
 
-**Le filaire tourne dans l'AUTRE sens que le solide** — mesuré, pente −0,61 sur
-les meilleurs appariements de silhouette. Il est joué **à rebours**. Calage
-pose par pose sur cinq repères, vérifiés à l'œil :
+### Pièges déjà payés — ne pas les rejouer
 
-```
-solide  [24, 43, 69,  90, 110]
-filaire [88, 68, 54,  38,  18]      face, profil G, dos, profil D, face
-```
+**`open()` ne doit plus forcer le sous-texte ni le bouton.** C'est le filet de
+sécurité de l'intro ; il arrivait en fin de timeline. Comme la timeline ne
+contient plus les tweens du titre, elle se termine **immédiatement** — donc
+`open()` allumait le paragraphe et le bouton sur une page encore vide. Il ne le
+fait plus que si `this.poseTitre` n'existe pas.
 
-Les **douze dernières tuiles** du filaire basculent sur la pose ampoule levée
-(image fournie par Redha, détourée par passe-haut), avec un fondu sur sept
-images. Le maillage filmé n'a jamais eu cette pose : c'est ce qui faisait
-apparaître un fragment décalé sous le curseur-scanner.
+**Les masques de ligne ne se referment jamais.** Ils repassaient en
+`overflow:hidden` en fin d'intro, du temps où les lettres avaient fini de
+tomber. Les refermer rognerait toutes celles qui ne sont pas encore posées.
 
-Recolorisation du filaire : **une tuile à la fois**, au changement d'image
-(~170 000 px, 2 ms). Repeindre la planche entière au chargement coûterait 13
-millions de pixels d'un coup.
+**L'amplitude du pen (±200 %) ne marche pas ici.** Le pen n'a qu'UNE ligne ;
+il y en a trois, empilées, masques ouverts. À ±200 % le « F » de FAISONS venait
+se poser sur le « D » de DÉCOLLER. Plafonné à ±75 %.
+
+**L'opacité des lettres doit être un fondu, pas un interrupteur.** La première
+lettre, dont la fenêtre commence à zéro, s'éteignait d'un coup en haut de page
+pendant que les autres restaient visibles.
+
+**Le tirage aléatoire est déterministe** (`Math.sin(i * 12.9898)`). En scrub, la
+même position de scroll doit rendre la même image, sinon tout grelotte.
+
+**Le bouton porte l'effet magnétique** dans `--mx`. Écraser son `transform` par
+un `translateY` simple tue l'effet — la variable est conservée dans la valeur.
+
+### Le rideau noir
+
+`[data-noir]`, `#000` plein, `inset:0`, `z-index:7` — au-dessus de tout sauf de
+l'invite (`z-index:8`). Au premier pixel il n'y a rien d'autre à regarder que le
+signe à suivre. Il se retire AVANT l'invite : sinon l'écran passe par un instant
+où il n'y a plus rien du tout.
+
+### L'invite à défiler
+
+`[data-cue]` : souris SVG + « SCROLL », centrée, fuchsia `#FF2C86`. La bille
+descend puis disparaît et repart du haut invisible — **elle ne remonte pas**, le
+geste demandé n'a qu'un sens. Le néon (trois `drop-shadow` empilés) a été essayé
+puis retiré : sur un objet de 21 px ça fait une tache, pas une lumière.
+
+### Le pot à crayons
+
+Il reprend `--nait` (0 au premier pixel, 1 à 13 % de la piste). Il en avait été
+sorti quand le titre s'affichait au chargement ; maintenant que le titre arrive
+au scroll, il n'a plus de raison d'être le seul objet présent.
+
+### Ce qui a été SUPPRIMÉ (et pourquoi ne pas le remettre)
+
+- **Le verrou « pose acquise »** (sessionStorage). Il verrouillait la figurine
+  en position finale pour toute la visite : l'animation ne rejouait plus jamais.
+  Trois tentatives de conditionner le verrou, trois échecs. Supprimé.
+  Le besoin réel est couvert par le lien « Accueil » (voir plus bas).
+- **L'interférence sur le titre** (clones colorés, balayage). Retirée à la
+  demande.
+- **Le glitch intermittent sur les disquettes**. 219 lignes supprimées, il ne
+  reste rien. La cause de l'échec est notée : posé sur un `<img>`, le calque
+  doublait l'image au lieu de la déchirer, et la parallaxe de souris vit sur
+  l'`<img>` lui-même — le calque sautait.
 
 ---
 
-## Pièges vérifiés — ne pas les rejouer
+## 2. LE MENU
 
-**`gsap.from()` + `stagger` ne masque pas les cibles en attente.** Elles se
-rendent à leur valeur **finale** tant que leur sous-tween n'a pas démarré.
-Mesuré : opacités `0,1,1,1,1…` au temps 0. Utiliser `fromTo`.
+**« Accueil » ne renvoie plus en haut de page** : il pose la page à
+`FIN × course` du hero, figurine montée et ampoule levée (`this.heroPoseY()`,
+exposé par `scanHero()`). Le haut de la page ne montre qu'une scène vide.
 
-**Deux `set()` au même instant sur la timeline : le dernier ajouté gagne.** La
-première lettre ne s'affichait jamais. Poser le masquage AVANT le dévoilement,
-et l'omettre pour l'élément qui part à zéro.
-
-**Ne jamais remplacer une zone délimitée par deux repères** dans
-`PixoveryPage.jsx`. Ça a emporté tout le bloc des lettres une fois de plus.
-Chaînes exactes, une par une.
-
-**Le hero n'a pas d'`overflow:hidden`.** Les lettres qui tombent en sortaient
-par le haut et passaient devant le header. Le hero se clippe donc le temps de
-la séquence, et se rouvre après.
-
-**`mix-blend-mode` n'atteint pas le fond du hero.** `[data-herovisual]` porte un
-transform, donc un contexte d'empilement. Un canvas sur fond noir affichait un
-rectangle noir sur la nappe violette. Les planches sont détourées à la source.
-
-**Un tirage aléatoire doit être déterministe.** En scrub, la même position de
-scroll doit rendre la même image, sinon tout grelotte à la molette.
-
-**Le trait filaire s'épaissit à chaque rééchantillonnage.** Seuil resserré
-(125, largeur 38) **et gamma 1,7 appliqué APRÈS le redimensionnement** — c'est
-là que naissent les franges. Les tuiles font 332×512 pour un affichage à
-~400×617 : en dessous, on voit l'agrandissement.
-
-**Un glitch se lit à ~14 images/seconde, pas à 60.** Il avance par `setTimeout`,
-et **aucun rAF permanent** ne tourne : rien avant le bout de la piste, tout
-s'arrête si on remonte.
+**Les liens qui traversent Services ne sont plus avalés.** Services capture le
+défilement : dès qu'on entre dans sa piste, `cadence()` recadre la page de force
+(`lenis.scrollTo` en `immediate + force`). On cliquait Contact, on atterrissait
+sur Services. Le clic lève un drapeau `this.navVol` que `cadence()` respecte ;
+il retombe à l'arrivée (`onComplete`) ou sur un minuteur de 1,6 s.
+`this.navReset()` remet `etaitTenue` à zéro pour qu'un vol qui S'ARRÊTE dans
+Services rejoue son entrée plus tard.
 
 ---
 
-## En attente
+## 3. TYPOGRAPHIE ET COULEUR
 
-- **Le poids** : les deux planches font 2,9 Mo. C'est le prix du net à cette
-  taille. Réductible en baissant le nombre d'images ou la taille des tuiles.
-- `perso-tour-76.webp` et `perso-filaire-76.webp` ne servent plus dans
-  `public/assets/` — supprimables.
+**Newake** (`public/assets/fonts/NewakeFont-Demo.otf`) sur le `h1` du hero et
+tous les `h2` de section. `font-weight:400` **obligatoire** : la fonte n'a
+qu'une graisse, un 700/800 ferait fabriquer un gras de synthèse.
+
+Le fichier est un `.otf` : la conversion en woff2 réclame Brotli, absent de
+l'environnement. 68 Ko, à convertir le jour où le poids compte.
+
+Neue Haas était encodée en base64 dans `global.css` ; elle a été extraite en
+trois `.woff2` dans `public/assets/fonts/` pour que les pages statiques
+(études de cas) puissent la charger.
+
+**Les accents étaient rognés** (« DECOLLER », « IDEES ») : la boîte de ligne
+passait sous l'accent. Corrigé par `padding-top:.16em` + `margin-top:-.16em` sur
+`#accueil h1 > span` — la boîte s'agrandit vers le haut sans rien déplacer.
+
+**Le crème `#FFE4CB`** (relevé sur l'affiche Newake) a été essayé sur les titres
+et le corps de texte : trop chaud face à une palette entièrement froide.
+Il ne reste que sur les **petits textes** — légendes du portfolio, en-tête
+galerie, pied de page. `[data-chapter] span` en est explicitement exclu : c'est
+le numéro de chapitre, il doit rester fuchsia.
+
+**Le fuchsia `#E2006B` ne fonctionne qu'en aplat plein.** Sa luminance est
+d'environ 0,25 : en trait de 1 px sur fond noir il ne se lit pas comme une
+lumière mais comme une salissure brunâtre. Trois essais ratés sur le focus des
+champs avant de comprendre.
+
+---
+
+## 4. LE RESTE DE LA PAGE
+
+**Le bouton « Voir mes projets » est à plat.** Biseau, ombre interne, flanc de
+3 u et trois ombres portées : tout est parti. Les états jouent sur la valeur —
+`#E2006B` / `#FF2C86` au survol / `#B80057` à l'enfoncement. Le `transform` reste
+interdit sur ce bouton, il appartient au JS.
+
+**Les champs du formulaire sont des gélules creusées** (principe uiverse) :
+aucune bordure, une ombre interne en haut à gauche. Fond `#0B0A0E` et non `#000`
+— sur du noir pur, une ombre interne noire n'a rien à assombrir. L'autofill de
+Chrome est neutralisé (il repeint avec sa propre ombre interne). Au focus :
+aucune couleur, seulement de la lumière.
+
+**Le trait de balayage du hero est un faisceau, pas un néon.** Quatre couches
+centrées sur la même ligne : cœur 1,5 u, nappe 40 u, point chaud mobile, halo
+135 u. Un néon est un tube (épaisseur constante) ; un faisceau est un fuseau, et
+une pointe ne se fait qu'avec un dégradé **elliptique**. Profil retenu au banc
+d'essai (`faisceau.html`, à la racine) : **D**, « halo dominant ».
+
+**La figurine du Processus est revenue sur ordinateur.** Elle avait été retirée
+partout ; la demande ne portait que sur le responsive. Masquée sous 769 px, et
+`spin()` refuse d'y démarrer — sinon 1,3 Mo de planches partiraient en
+téléchargement sur téléphone pour un élément invisible.
+
+**Services** : le titre ne glisse plus de 10 u au survol (ça cassait
+l'alignement numéro / titre / paragraphe, et comme la souris est forcément dans
+le panneau quand on le lit, l'état décalé était l'état normal). Le gros numéro
+est écarté du titre (6 u → 16 u). Les paragraphes 2, 3 et 4 ont été nettoyés
+(`<br>` parasite, `data-start`/`data-end`, `&nbsp;`).
+
+**Contact** : la lueur au sol de l'ordinateur était posée devant la machine, pas
+sous elle — et comme l'image est en `mix-blend-mode:screen`, le plateau sombre
+est quasi transparent et la laissait traverser. Resserrée. Le masque du bas
+commençait à 88 %, c'est-à-dire en plein dans le clavier ; descendu à 93 %.
+
+---
+
+## 5. LES ÉTUDES DE CAS (nouveau)
+
+`public/projets/kabuki-sushi.html` — gabarit d'étude de cas, fichier **statique**
+dans `public/`, pas un composant React. Trois raisons : aucune dépendance
+(pas de routeur), Vite recopie `public/` tel quel donc l'URL est réelle et
+indexable, et ça ne touche pas au `PixoveryPage.jsx` de 3 000 lignes.
+
+Quatre blocs : le logo en grand, les couleurs, les applications, l'appel à
+l'action. **Aucun texte de présentation** — les emplacements sont en commentaire,
+Redha doit les fournir.
+
+Le clic sur une vignette du portfolio : une `<article>` qui porte
+`data-projet="/projets/…"` mène à sa page ; les autres gardent le plein écran.
+On ajoute l'attribut au fur et à mesure que les pages existent.
+
+Visuels découpés dans le mockup fourni, dans
+`public/assets/projets/kabuki-sushi/` : `logo`, `enseigne`, `sac`, `boite`,
+`menu`, `cartes`, `stickers`, `valeurs`.
+
+---
+
+## EN ATTENTE
+
+- **Les textes des études de cas** — Redha doit les envoyer.
+- **Le logo du header en SVG.** Il est en `.webp` : impossible de repeindre ses
+  formes en CSS. Une demande de logo fuchsia est restée en suspens pour ça.
+- **Le poids** : les deux planches du hero font 2,9 Mo.
 - **Témoignages** : textes de remplissage, noms inventés. À remplacer avant
   mise en ligne.
-- Le site en ligne (`www.pixovery.com`, GitHub Pages) tourne sur la version
-  d'avant. Rien de tout ça n'y est.
+- Le site en ligne (`www.pixovery.com`, GitHub Pages) tourne toujours sur la
+  version d'avant. Rien de tout ça n'y est.
 
-## Sauvegardes à la racine
+## Fichiers de travail à la racine (jetables)
 
-`PixoveryPage.AVANT-TOUR.jsx`, `global.AVANT-TOUR.css`,
+`faisceau.html` (banc d'essai du trait de balayage, profils A→E),
+`banc-glitch-disquette.html` (banc d'essai abandonné).
+Plus les sauvegardes : `PixoveryPage.AVANT-TOUR.jsx`, `global.AVANT-TOUR.css`,
 `PixoveryPage.AVANT-CHUTE.jsx`.

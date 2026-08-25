@@ -249,57 +249,35 @@ input,textarea{font:inherit}
 }
 
 /* ---------------------------------------------------------------------
-   ACCUEIL — bouton « Voir mes projets », touche physique
+   ACCUEIL — bouton « Voir mes projets », à plat
 
-   Le neomorphisme d'ecole extrude un bouton dans la couleur exacte de son
-   fond. Ici le fond est #000 : un bouton noir sur noir serait invisible,
-   et c'est le seul appel a l'action de la page. On garde donc la matiere
-   rose et on lui applique le meme raisonnement — une arete du dessus qui
-   prend la lumiere, une arete du dessous dans l'ombre, un flanc qui donne
-   l'epaisseur, et une ombre portee qui pose la touche au-dessus du vide.
+   Il était en touche physique : biseau clair en haut, ombre interne en
+   bas, flanc de 3 u, trois ombres portées. Tout ça est retiré.
 
-   Le transform est interdit ici : il appartient au JS (intro + effet
-   magnetique via --mx/--my). L'enfoncement se joue donc uniquement sur
-   les ombres — on retire le flanc, on rentre les lumieres. A l'oeil ca
-   revient au meme, et rien ne se marche dessus.
+   Le flat design ne se contente pas d'enlever les ombres : il change la
+   façon dont un bouton dit qu'il est cliquable. Le relief le disait par
+   l'imitation d'un objet ; à plat, ce sont la COULEUR PLEINE et le
+   CONTRASTE avec le fond qui le disent. Donc une seule teinte, franche,
+   sans dégradé — un dégradé, même léger, est déjà du volume.
+
+   Les états ne peuvent plus jouer sur l'ombre, ils jouent donc sur la
+   valeur : plus clair au survol, plus sombre à l'enfoncement. Rien
+   d'autre ne bouge — le transform appartient au JS (intro + effet
+   magnétique via --mx/--my), il reste interdit ici.
 
    !important parce que le style de base est inline dans le JSX.
 --------------------------------------------------------------------- */
 [data-heroline="btn"]{
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.30),
-    inset 0 calc(-2*var(--u)) calc(4*var(--u)) rgba(96,0,44,.5),
-    inset 0 -1px 0 rgba(0,0,0,.42),
-    0 calc(3*var(--u)) 0 #86003C,
-    0 calc(4*var(--u)) calc(3*var(--u)) rgba(0,0,0,.6),
-    0 calc(11*var(--u)) calc(20*var(--u)) rgba(0,0,0,.78);
-  /* Aucun halo rose au repos : la touche est posee sur le noir, elle ne
-     s'allume pas toute seule. Le halo n'arrive qu'au survol, et c'est ce
-     qui lui donne sa raison d'etre. */
+  background:var(--pink) !important;
+  box-shadow:none !important;
 }
 [data-heroline="btn"]:hover{
-  background:linear-gradient(176deg,#FF3E90 0%,#EF0074 46%,#D60064 100%) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.38),
-    inset 0 calc(-2*var(--u)) calc(4*var(--u)) rgba(96,0,44,.44),
-    inset 0 -1px 0 rgba(0,0,0,.42),
-    0 calc(5*var(--u)) 0 #930042,
-    0 calc(7*var(--u)) calc(4*var(--u)) rgba(0,0,0,.55),
-    0 calc(17*var(--u)) calc(28*var(--u)) rgba(0,0,0,.8),
-    0 calc(22*var(--u)) calc(58*var(--u)) rgba(226,0,107,.38) !important;
+  background:#FF2C86 !important;
+  box-shadow:none !important;
 }
-/* enfoncee : le flanc disparait, la lumiere rentre a l'interieur, la face
-   s'assombrit. C'est ce qui remplace le translateY qu'on ne peut pas
-   utiliser ici. */
 [data-heroline="btn"]:active{
-  background:linear-gradient(176deg,#A8004E 0%,#BE005A 55%,#D10063 100%) !important;
-  box-shadow:
-    inset 0 calc(5*var(--u)) calc(9*var(--u)) rgba(58,0,26,.9),
-    inset 0 calc(2*var(--u)) calc(3*var(--u)) rgba(58,0,26,.7),
-    inset 0 -1px 0 rgba(255,255,255,.16),
-    inset 0 calc(-3*var(--u)) calc(5*var(--u)) rgba(255,120,175,.10),
-    0 1px calc(2*var(--u)) rgba(0,0,0,.7),
-    0 calc(4*var(--u)) calc(12*var(--u)) rgba(226,0,107,.14) !important;
+  background:#B80057 !important;
+  box-shadow:none !important;
   transition-duration:.07s !important;
 }
 [data-heroline="btn"]:focus-visible{
@@ -778,18 +756,704 @@ canvas.scanSolid, canvas.scanWire{
   100% {transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1); opacity:0}
 }
 
-/* le trait de balayage */
-.scanLine{position:absolute;left:-3%;right:-3%;top:var(--ly);height:calc(2.2*var(--u));z-index:6;pointer-events:none;
+/* --- LE TRAIT DE BALAYAGE : UN FAISCEAU, PAS UN TUBE -------------------
+   Reference : le trait de lumiere bleu, cf. la capture du 24 aout.
+   Profil retenu au banc d'essai (faisceau.html) : D, "halo dominant".
+
+   Ce qui fait la difference, et pourquoi les deux essais precedents
+   tombaient a cote :
+
+   - un neon est un TUBE : epaisseur constante, extremites franches. Un
+     faisceau est un FUSEAU : incandescent au centre, il s'affine jusqu'a
+     disparaitre en pointe. C'est un degrade ELLIPTIQUE, pas lineaire —
+     une ellipse s'eteint a la fois vers les bouts et vers le haut et le
+     bas, et c'est ca qui fabrique la pointe. Aucun degrade lineaire ne
+     sait faire une pointe.
+   - les bouts qui paraissaient noirs ne l'etaient pas : il manquait le
+     halo. Un trait qui s'eteint SANS lueur autour laisse deux moignons
+     eteints sur le noir. Le meme trait pose au milieu d'une nappe large
+     et saturee se lit comme une pointe de lumiere. La reponse n'etait
+     donc pas de remplir les bouts, c'etait d'ajouter la nappe.
+   - trois couches, du plus dur au plus mou, toutes centrees sur la meme
+     ligne : le coeur blanc, la nappe saturee, le halo large. Chacune
+     deborde de la precedente. C'est cet emboitement qui donne la
+     profondeur — une seule couche, meme bien reglee, reste plate.
+
+   Tout est anime en permanence, mais seulement en `opacity` et en
+   `transform` : jamais de box-shadow ni de filter animes, ils
+   repeindraient une surface large comme le hero a chaque image. */
+
+/* 1. LE COEUR — presque un cheveu (1,5 u). C'est voulu : dans le profil
+   retenu, le trait ne porte pas l'effet, il n'en est que le filament. */
+.scanLine{position:absolute;left:-6%;right:-6%;top:var(--ly);height:calc(1.5*var(--u));z-index:6;pointer-events:none;
   opacity:var(--lo);transform:translateY(-50%);
-  background:linear-gradient(90deg, rgba(255,45,190,0) 0%, rgba(255,45,190,.95) 18%, #fff 50%, rgba(255,45,190,.95) 82%, rgba(255,45,190,0) 100%);
-  box-shadow:0 0 calc(18*var(--u)) calc(3*var(--u)) rgba(255,45,190,.55)}
-.scanLineGlow{position:absolute;left:-6%;right:-6%;top:var(--ly);height:calc(46*var(--u));z-index:5;pointer-events:none;
-  opacity:calc(var(--lo) * .75);transform:translateY(-100%);
-  background:linear-gradient(to bottom, rgba(255,45,190,0) 0%, rgba(255,45,190,.16) 70%, rgba(255,45,190,.34) 100%);
-  filter:blur(calc(6*var(--u)))}
+  background:radial-gradient(ellipse 50% 50% at 50% 50%,
+    #FFFFFF 0%, #FFFFFF 8%, #FFD9F4 14%, #FF8FE2 40%,
+    rgba(255,45,190,.55) 61%, rgba(255,45,190,0) 82%);
+  box-shadow:
+    0 0 calc(4*var(--u))  calc(.7*var(--u))  rgba(255,220,246,.50),
+    0 0 calc(11*var(--u)) calc(2*var(--u))   rgba(255,45,190,.55);
+  animation:neonSouffle 4.6s ease-in-out infinite}
+
+/* 2. LA NAPPE — c'est ELLE qui porte tout. 40 u de haut, opacite pleine
+   au centre, floutee a 10 u. Vingt fois plus haute que le coeur. */
+.scanLine::before{content:'';position:absolute;left:-3%;right:-3%;top:50%;height:calc(40*var(--u));
+  transform:translateY(-50%);pointer-events:none;
+  background:radial-gradient(ellipse 50% 50% at 50% 50%,
+    rgba(255,170,236,1) 0%, rgba(255,45,190,.60) 24%,
+    rgba(214,55,255,.24) 52%, rgba(255,45,190,0) 88%);
+  filter:blur(calc(10*var(--u)))}
+
+/* 3. LE POINT CHAUD — il court d'un bout a l'autre. Il se deplace en
+   pourcentage de SA PROPRE largeur : 0 % a gauche, 600 % a droite. */
+.scanLine::after{content:'';position:absolute;top:50%;left:0;width:14%;height:calc(3.5*var(--u));
+  border-radius:50%;will-change:transform;
+  background:radial-gradient(50% 50% at 50% 50%, rgba(255,255,255,.90) 0%, rgba(255,150,235,.40) 44%, rgba(255,45,190,0) 100%);
+  animation:neonCourse 4.2s cubic-bezier(.45,0,.55,1) infinite alternate}
+
+/* 4. LE HALO — 135 u, tres floue, violette sur ses bords. Elle deborde
+   largement du faisceau : c'est ce debordement qui fait la lumiere. */
+.scanLineGlow{position:absolute;left:-12%;right:-12%;top:var(--ly);height:calc(135*var(--u));z-index:5;pointer-events:none;
+  opacity:calc(var(--lo) * .8);transform:translateY(-50%);
+  background:radial-gradient(ellipse 50% 50% at 50% 50%,
+    rgba(255,45,190,.55) 0%, rgba(196,52,255,.28) 30%,
+    rgba(150,40,255,.10) 58%, rgba(122,1,255,0) 90%);
+  filter:blur(calc(31*var(--u)));
+  animation:neonHalo 4.6s ease-in-out infinite}
+
+@keyframes neonSouffle{
+  0%,100%{opacity:calc(var(--lo) * 1)}
+  36%    {opacity:calc(var(--lo) * .86)}
+  42%    {opacity:calc(var(--lo) * 1)}
+  71%    {opacity:calc(var(--lo) * .93)}
+}
+@keyframes neonHalo{
+  0%,100%{opacity:calc(var(--lo) * .72)}
+  46%    {opacity:calc(var(--lo) * 1)}
+}
+@keyframes neonCourse{
+  from{transform:translate(-60%,-50%)}
+  to  {transform:translate(525%,-50%)}
+}
 
 @media (prefers-reduced-motion: reduce){
   .scanGrid{display:none}
-  .scanLineGlow{filter:none;opacity:calc(var(--lo) * .5)}
+  .scanLineGlow{filter:none;opacity:calc(var(--lo) * .5);animation:none}
+  .scanLine{animation:none}
+  .scanLine::after{animation:none;opacity:0}
   .scanWire{filter:none}
 }
+
+/* ==========================================================================
+   RESPONSIVE, LISIBILITÉ ET MENU MOBILE — passe du 24 août 2026
+   Ce bloc arrive APRÈS tout le reste : il gagne à spécificité égale.
+   Il ne réécrit rien, il corrige. Chaque règle porte la raison de son
+   existence — sans ça, la prochaine session la retire en croyant nettoyer.
+   Tout a été mesuré dans Chromium, de 320 à 1920px de large.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. LE DÉBORDEMENT HORIZONTAL DE TOUTE LA PAGE
+   [data-contactrow] fait width:1024u PLUS 2×82u de padding, sans box-sizing :
+   1671px de large dans une fenêtre de 1440, 2189px dans une fenêtre de 1920.
+   La page entière prenait donc une barre de défilement horizontale à toutes
+   les largeurs ≥ 769px. Le correctif n'existait que dans la media query
+   768px — il manquait partout ailleurs.
+   -------------------------------------------------------------------------- */
+[data-contactrow]{box-sizing:border-box !important; max-width:100% !important}
+
+/* Ceinture et bretelles : plus aucune section ne peut élargir la page. Les
+   éléments qui doivent déborder (ruban Portfolio, disquettes en attente) sont
+   rognés par leur propre conteneur, ça ne les touche pas. */
+html, body{overflow-x:clip}
+
+/* --------------------------------------------------------------------------
+   2. PLANCHER DE LISIBILITÉ
+   La mise en page est homothétique : --u vaut largeur/1024, donc à 390px tout
+   est à 38% de la maquette. --tu relève déjà le corps de texte sous 768px,
+   mais les micro-labels sont écrits en --u et tombaient à 9,5px (catégories
+   du portfolio), 11px (numéros de chapitre, pied de page), 12px (légendes).
+   Les planchers valent à TOUTES les largeurs : entre 1024 et ~1350px, --u
+   vaut à peine plus de 1, donc 9,5px s'affichait aussi sur un vrai écran
+   d'ordinateur. Le max() ne mord jamais au-delà — à 1440 les valeurs
+   calculées dépassent déjà le plancher, le rendu desktop est inchangé.
+   -------------------------------------------------------------------------- */
+[data-chapter] span, [data-galhead] span{font-size:max(calc(11*var(--u)), 12px) !important}
+/* :not([data-piecenum]) — cette regle visait le petit label de categorie,
+   mais le NUMERO du projet est aussi un <span> : il tombait de 74u a 12px. */
+[data-piece] span:not([data-piecenum]){font-size:max(calc(9.5*var(--u)), 12px) !important}
+[data-piece] p{font-size:max(calc(12*var(--u)), 13px) !important}
+[data-tempied] b{font-size:max(calc(12.5*var(--u)), 13px) !important}
+[data-svcjauge] em{font-size:max(calc(11*var(--u)), 12px) !important}
+footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.5px) !important}
+
+@media (max-width:1023px){
+  /* le corps de texte ne descend plus sous sa taille maquette */
+  :root{--tu:max(var(--u), 1px)}
+}
+
+/* Cibles tactiles : les liens du pied de page faisaient 15 à 20px de haut.
+   44px est le seuil demandé par Apple et Google. Le menu, lui, est traité
+   plus bas — c'est devenu un panneau. */
+@media (max-width:1023px) and (pointer:coarse){
+  [data-legal] a{
+    display:inline-flex !important; align-items:center;
+    min-height:44px; padding-block:calc((44px - 1em) / 2) !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   3. LA TRANCHE 769 → 1023px N'EXISTAIT PAS
+   iPad en portrait, fenêtre à moitié réduite, petit portable : on tombait sur
+   la maquette 1024 comprimée, avec des colonnes qui se serrent jusqu'à
+   devenir illisibles.
+   -------------------------------------------------------------------------- */
+@media (min-width:769px) and (max-width:1023px){
+  [data-contactrow]{flex-direction:column !important; align-items:center !important;
+    gap:calc(36*var(--u)) !important}
+  [data-contactrow] > div:last-child{max-width:min(560px,86vw) !important; width:100%}
+
+  [data-aboutrow]{gap:calc(28*var(--u)) !important}
+  [data-aboutrow] p{max-width:none !important}
+
+  /* Trois colonnes dans 800px font des citations de 240px de large. */
+  [data-temoins]{flex-wrap:wrap !important}
+  [data-temoins] > div{margin-top:0 !important; transform:none !important}
+}
+
+/* --------------------------------------------------------------------------
+   4. LE HERO SUR TÉLÉPHONE
+   Le bloc responsive existant date d'AVANT la piste collante : il posait
+   #accueil{height:auto} et [data-herovisual]{position:static} pour un hero
+   qui tenait en un écran. Depuis, le hero vit dans [data-heropiste]
+   (100vh + 300vh) et se joue au défilement. Mesuré sur iPhone 390×844 : le
+   hero ne faisait que 505px de haut — 339px de noir sous le contenu pendant
+   trois écrans de piste — et la figurine tombait à 216px.
+   La séquence est gardée (décidé par Redha), en version courte.
+   -------------------------------------------------------------------------- */
+@media (max-width:768px){
+  /* La piste passe de 300vh à 150vh de défilement. Rien d'autre à changer :
+     scanHero() et heroScroll() lisent tous les deux
+     piste.offsetHeight - innerHeight, donc toute la chorégraphie se
+     recomprime d'elle-même. Ne pas coder cette valeur en dur ailleurs. */
+  :root{--piste-hero:150vh}
+
+  /* Le hero tient l'écran entier. 100svh et non 100vh : sur iOS la barre
+     d'adresse rétractable fait mentir vh, et une section collante calée sur
+     100vh saute de 60px au premier défilement. */
+  #accueil{height:100svh !important; min-height:100svh !important}
+  #accueil > div{
+    height:100% !important; min-height:100svh;
+    justify-content:center !important;
+    padding:clamp(70px, 16vw, 96px) calc(22*var(--u)) calc(28*var(--u)) !important;
+    gap:clamp(14px, 3.2vh, 34px) !important;
+  }
+
+  /* La figurine : 216px sur un écran de 390, c'était une vignette. Elle
+     devient le sujet. min() sur la hauteur aussi, sinon sur un petit écran
+     en paysage elle pousse le titre hors champ. */
+  [data-herovisual]{
+    width:min(82vw, 46vh, 420px) !important;
+    height:min(82vw, 46vh, 420px) !important;
+    flex:0 0 auto;
+  }
+
+  /* --- PROCESSUS : la liste des étapes tenait dans 158px de large ---
+     [data-procrail] est une grille à deux colonnes (les étapes, puis le
+     visuel). Personne ne l'avait repassée en une colonne : sur un écran de
+     390px, le texte s'affichait sur 114px utiles, trois mots par ligne.
+     C'était la section la plus abîmée du site sur téléphone. */
+  [data-procrail]{
+    grid-template-columns:1fr !important;
+    gap:calc(30*var(--u)) !important;
+    padding-inline:max(calc(31*var(--u)), 18px) !important;
+  }
+
+  /* --- SERVICES : la disquette faisait 88px, le texte 176 ---
+     La grille ne pouvait pas y arriver : [data-svcico] porte un placement
+     explicite (colonne 2, sur les trois lignes) qui l'emporte sur les zones
+     nommées « title title » / « para para ». Le titre et le paragraphe
+     restaient coincés dans la colonne 1.
+     On sort de la grille : une colonne, dans l'ordre de lecture. Le nœud de
+     rotation [data-floppy] et l'ordre de ses transforms ne sont pas touchés,
+     seulement la boîte qui le contient. */
+  [data-svc]{
+    display:flex !important;
+    flex-direction:column !important;
+    align-items:flex-start !important;
+    justify-content:center !important;
+    gap:calc(14*var(--u)) !important;
+    /* la carte fait 100vh et le header est fixe : sans cette réserve, le
+       numéro « 01 » passait sous la barre de menu */
+    padding-top:clamp(70px, 16vw, 96px) !important;
+    padding-bottom:calc(40*var(--u)) !important;
+  }
+  [data-svcnum]{order:0}
+  [data-svcico]{
+    order:1; align-self:center;
+    width:min(46vw, 200px) !important;
+    height:min(46vw, 200px) !important;
+    margin-block:calc(6*var(--u));
+  }
+  [data-svch]{order:2}
+  [data-svcp]{order:3}
+
+  /* --- PROCESSUS : la pastille du numéro ---
+     Elle est dimensionnée en unités maquette (76u), soit 29px à 390 — mais
+     son chiffre garde le plancher de lisibilité (24px). Le « 01 » débordait
+     donc du cercle. On fixe la pastille en pixels sur mobile : 46px pour un
+     chiffre de 17, box-sizing:border-box pour que la bordure ne l'agrandisse
+     pas de 2px comme elle le fait ailleurs.
+     La colonne de la grille, le trait et son cache suivent la même valeur —
+     si tu changes 46, change les quatre. */
+  [data-step]{
+    grid-template-columns:46px minmax(0,1fr) !important;
+    column-gap:16px !important;
+  }
+  [data-stepnum]{
+    box-sizing:border-box !important;
+    width:46px !important; height:46px !important;
+    font-size:17px !important;
+    flex:0 0 auto;
+  }
+  [data-steps] [data-draw]{
+    left:22.5px !important;
+    top:calc(30*var(--u) + 23px) !important;   /* padding du li + demi-pastille */
+  }
+  [data-step]:last-child::after{
+    left:22px !important;
+    top:calc(30*var(--u) + 46.5px) !important; /* padding du li + pastille */
+  }
+
+  /* Les disquettes restent DE FACE sur téléphone.
+     Le JS écrit --floppy-rot = pk × -46deg : les cartes en attente présentent
+     donc leur disquette à 46° puis 69°. Sur desktop elles patientent hors
+     champ, rognées par [data-colle], et on ne voit que la rotation de celle
+     qui arrive. En une seule colonne, pendant le glissement d'une carte à
+     l'autre, cette disquette de trois quarts arrière traverse l'écran comme
+     une plaque noire — invisible tant qu'elle faisait 88px, très voyante à
+     179. On neutralise la seule rotation Y ; l'inclinaison, le cône et le
+     flottement sont intacts, la disquette n'est pas figée. */
+  [data-floppy]{--floppy-rot:0deg !important}
+  /* align-items:flex-start laisse chaque enfant à sa largeur naturelle : le
+     paragraphe restait à 151px. On rend la largeur aux éléments de texte. */
+  [data-svcnum], [data-svch], [data-svcp]{width:100% !important; max-width:none !important}
+}
+
+/* ==========================================================================
+   5. MENU MOBILE
+   Le menu déroulé ne tient pas sur un téléphone : cinq entrées demandent
+   363px de texte pour 292px utiles. Empilé, il faisait une barre de 106 à
+   188px de haut qui recouvrait la première ligne du H1 du hero.
+   Il devient un panneau plein écran.
+
+   Mécanique : le bouton [data-burger] pose ou retire la classe `menu-ouvert`
+   sur <html> (un onClick dans le JSX, aucun état React), et un clic n'importe
+   où dans [data-nav] la retire — donc choisir une entrée ferme le panneau et
+   laisse la navigation par ancre faire son travail. Si tu renommes la classe,
+   les deux onClick de PixoveryPage.jsx sont à corriger aussi.
+   ========================================================================== */
+
+/* Le bouton n'existe qu'en dessous de 769px : au-dessus, le menu déroulé
+   tient et reste la bonne réponse. */
+[data-burger]{display:none !important}
+
+@media (max-width:768px){
+
+  /* --- la barre --- */
+  /* Retour sur UNE ligne : logo à gauche, bouton à droite. Le bloc mobile
+     d'origine la passait en colonne pour y loger le menu ; il n'y a plus de
+     menu à loger. */
+  /* Fond noir plein, pas de dégradé ni de flou : la barre doit être une
+     barre. header() écrit en ligne `background: transparent` tant qu'on est
+     sur le hero — d'où le !important. */
+  [data-hdr]{height:auto !important; background:#000 !important}
+  /* :not([data-progress]) est indispensable. [data-hdr] contient DEUX div :
+     la barre de contenu, et [data-progress], le trait de progression de 1px
+     posé en bas du header (fond blanc à 7%). Le sélecteur `[data-hdr] > div`
+     attrapait les deux : en donnant display:flex et padding:14px au trait, on
+     en faisait un bandeau gris de 24px sur toute la largeur, juste sous le
+     header. Le bloc mobile d'origine avait déjà ce défaut. */
+  [data-hdr] > div:not([data-progress]){
+    display:flex !important;
+    flex-direction:row !important;
+    align-items:center !important;
+    justify-content:space-between !important;
+    width:100% !important;
+    padding:14px max(calc(22*var(--u)), 16px) !important;
+  }
+  /* et on remet le trait dans son état, quoi qu'en dise le bloc d'origine */
+  [data-hdr] > [data-progress]{
+    display:block !important;
+    height:1px !important;
+    padding:0 !important;
+    flex-direction:row !important;
+    align-items:stretch !important;
+  }
+  /* Le lettrage complet fait un ratio de 5:1 — sur une barre de 56px il est
+     soit minuscule, soit trop large. Sur mobile on ne garde que le monogramme,
+     le P rose, qui est carré (100×100).
+     `content` remplace la source de l'<img> sans toucher au JSX : le lettrage
+     reste en place sur desktop, et le alt du JSX vaut toujours. */
+  [data-hdr] img{
+    content:url("/assets/logo-p.png") !important;
+    height:26px !important; width:26px !important;
+  }
+
+  /* --- le bouton --- */
+  [data-burger]{
+    display:flex !important;
+    flex-direction:column; justify-content:center; align-items:center; gap:5px;
+    width:44px; height:44px;        /* cible tactile pleine */
+    margin-right:-11px;             /* les traits s'alignent sur la marge du
+                                       contenu, pas la boîte de 44px */
+    flex:0 0 auto;
+    position:relative; z-index:2;   /* au-dessus du panneau */
+    background:none; border:0; padding:0; cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  /* Deux traits, pas trois : le troisième n'ajoute rien. Le trait du bas est
+     plus court — c'est ce décalage qui donne le mouvement quand ils se
+     croisent. */
+  /* Trois traits égaux, l'icône que tout le monde reconnaît. Ouvert : celui
+     du milieu s'efface, les deux autres se croisent. L'écart entre traits
+     (5px) et leur épaisseur (2px) donnent le décalage de 7px des rotations —
+     si tu changes l'un, recalcule l'autre. */
+  [data-burger] i{
+    display:block; width:22px; height:2px;
+    background:var(--txt); border-radius:2px;
+    transition:transform .34s cubic-bezier(.16,1,.3,1), opacity .18s linear;
+  }
+  .menu-ouvert [data-burger] i:nth-child(1){transform:translateY(7px) rotate(45deg)}
+  .menu-ouvert [data-burger] i:nth-child(2){opacity:0; transform:scaleX(.2)}
+  .menu-ouvert [data-burger] i:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+
+  /* --- le panneau --- */
+  [data-nav]{
+    position:fixed !important; inset:0 !important;
+    flex-direction:column !important;
+    justify-content:center !important;
+    align-items:flex-start !important;
+    flex-wrap:nowrap !important;
+    gap:0 !important;
+    padding:0 max(calc(30*var(--u)), 26px) !important;
+    margin:0 !important;
+    background:
+      radial-gradient(120% 90% at 78% 12%, rgba(122,1,255,.30) 0%, rgba(0,0,0,0) 62%),
+      rgba(4,3,8,.97);
+    -webkit-backdrop-filter:blur(22px); backdrop-filter:blur(22px);
+    opacity:0; visibility:hidden;
+    transition:opacity .34s ease, visibility .34s;
+  }
+  .menu-ouvert [data-nav]{opacity:1; visibility:visible}
+
+  /* Le header se masque tout seul au défilement. Panneau ouvert, il doit
+     rester : sinon le bouton de fermeture part avec lui. */
+  .menu-ouvert [data-hdr]{
+    transform:none !important; opacity:1 !important;
+    /* CE POINT EST LE PIÈGE DE TOUT CE BLOC.
+       Dès qu'on quitte le haut de page, header() pose en ligne
+       `backdrop-filter: blur(10px)` et `background: rgba(0,0,0,.82)` sur le
+       header. Or un élément qui porte un backdrop-filter (comme un transform)
+       devient le BLOC CONTENEUR de ses descendants position:fixed : le
+       panneau, qui est dans le <header>, se retrouvait enfermé dans une boîte
+       de 72px au lieu de couvrir l'écran — entrées collées en haut, fond
+       quasi invisible, le hero lisible au travers.
+       Panneau ouvert, on retire donc les deux : c'est le panneau lui-même qui
+       porte le fond et le flou. Testé en haut de page ET après défilement —
+       les deux cas ne donnent pas le même résultat, il faut vérifier les deux.
+       Ne pas remettre un backdrop-filter, un filter ni un transform ici. */
+    background:transparent !important;
+    -webkit-backdrop-filter:none !important;
+    backdrop-filter:none !important;
+  }
+
+  /* --- les entrées --- */
+  /* Grandes, une par ligne, alignées à gauche : c'est un menu plein écran,
+     pas une barre miniature. */
+  [data-nav] a{
+    display:block !important;
+    width:100%;
+    font-size:clamp(26px, 8.4vw, 40px) !important;
+    line-height:1.06;
+    letter-spacing:-.01em !important;
+    color:var(--txt) !important;
+    padding-block:clamp(10px, 1.8vh, 18px) !important;
+    min-height:0 !important;
+    white-space:nowrap;
+    /* chaque entrée monte à son tour quand le panneau s'ouvre */
+    opacity:0; transform:translateY(14px);
+    transition:opacity .4s ease, transform .5s cubic-bezier(.16,1,.3,1), color .25s ease;
+  }
+  .menu-ouvert [data-nav] a{opacity:1; transform:none}
+  .menu-ouvert [data-nav] a:nth-child(1){transition-delay:.06s}
+  .menu-ouvert [data-nav] a:nth-child(2){transition-delay:.11s}
+  .menu-ouvert [data-nav] a:nth-child(3){transition-delay:.16s}
+  .menu-ouvert [data-nav] a:nth-child(4){transition-delay:.21s}
+  .menu-ouvert [data-nav] a:nth-child(5){transition-delay:.26s}
+  /* le soulignement rose d'origine : à cette taille il devient une règle */
+  [data-nav] a i{bottom:6px !important; height:2px !important; transform-origin:left !important}
+}
+
+/* « Réduire les animations » : on garde l'ouverture, on retire le mouvement. */
+@media (max-width:768px) and (prefers-reduced-motion:reduce){
+  [data-nav] a{transform:none; transition:opacity .2s linear}
+  [data-burger] i{transition:none}
+}
+
+/* --------------------------------------------------------------------------
+   6. PROCESSUS : le trait rose dépassait sous la dernière étape
+   [data-draw] part de top:38u et fait 100% - 76u de haut. Mais chaque <li> a
+   30u de padding vertical : le centre de la première pastille est à 68u, pas
+   à 38u. Le trait commençait donc 30u trop haut et finissait 30u trop bas —
+   d'où le bout de ligne rose qui pendait sous « Livraison ».
+   Il va maintenant d'un centre de pastille à l'autre, exactement.
+   -------------------------------------------------------------------------- */
+[data-steps] [data-draw]{top:calc(68*var(--u)) !important}
+
+/* La FIN du trait ne peut pas se calculer : [data-draw] est haut de 100% de
+   la liste, et le bas de la liste, c'est le bas du DERNIER PARAGRAPHE, pas le
+   centre de la dernière pastille — d'où les 140px de rose qui pendaient sous
+   « Livraison » sur téléphone (12px sur desktop, où le texte est plus court).
+   Aucun calc() ne peut suivre, la hauteur du dernier bloc de texte change avec
+   la largeur de l'écran.
+   On masque donc la portion excédentaire avec un cache calé sur le centre de
+   la dernière pastille. La section est en background:#000 — le cache est
+   invisible, et l'animation de tracé (--draw, pilotée au scroll) reste
+   intacte : c'est la seule solution qui ne demande pas de JS.
+   Le cache est DANS le dernier <li>, donc au-dessus du trait, qui est un
+   frère précédent. */
+[data-step]:last-child::after{
+  content:'';
+  position:absolute;
+  left:calc(36*var(--u));
+  /* Le cache commence SOUS la pastille, pas à son centre.
+     30u de padding + 76u de pastille + 2px. Les 2px comptent : [data-stepnum]
+     est en content-box avec une bordure de 1px, donc le cercle mesure
+     76u + 2, pas 76u — mesuré 30,9px à 390 et 108,9px à 1440. Sans eux, le
+     cache mangeait la bordure basse et laissait une encoche à 6h. Le demi-
+     pixel de plus absorbe l'arrondi sous-pixel.
+     Et calé à 68u — le centre — il barrait carrément la moitié basse du
+     cercle d'un trait noir : c'est le bug que Redha a vu sur l'étape 04.
+     La portion de trait comprise entre le centre et le bas du cercle n'a pas
+     besoin d'être masquée : la pastille a un fond opaque (var(--dark)) et
+     vient après le trait dans le DOM, elle la couvre déjà. */
+  top:calc(106*var(--u) + 2.5px);
+  bottom:calc(-2*var(--u));
+  width:calc(5*var(--u));
+  min-width:3px;
+  background:#000;
+  pointer-events:none;
+}
+
+/* --------------------------------------------------------------------------
+   7. PROCESSUS : la figurine ne sort que sur MOBILE
+
+   Elle avait ete retiree partout ; ce n'etait pas la demande. Sur ordinateur
+   elle reste : c'est elle qui occupe la colonne de droite pendant qu'on lit
+   les quatre etapes. Sous 769 px il n'y a plus de place pour deux colonnes,
+   donc elle disparait — et spin() refuse d'y demarrer, sinon les deux
+   planches (1,3 Mo) partiraient en telechargement sur telephone pour rien.
+
+   La compensation (une seule colonne, texte pleine largeur) est deja ecrite
+   dans le bloc mobile plus haut : il ne reste ici que la mise en retrait.
+   -------------------------------------------------------------------------- */
+@media (max-width:768px){
+  [data-tour]{display:none !important}
+  /* le passage a une seule colonne et la largeur du texte sont deja traites
+     plus haut dans le bloc mobile : on ne les redit pas ici */
+}
+
+/* --------------------------------------------------------------------------
+   8. LE POT À CRAYONS NAÎT AVEC LE SCROLL (24/08, deuxième passe)
+
+   Il avait été sorti du fondu de naissance : à l'époque le titre s'affichait
+   au chargement, et un hero avec un titre mais sans décor paraissait vide.
+   Maintenant que le titre lui-même arrive au défilement, plus rien ne
+   justifie que le pot soit le seul objet present au premier pixel — il
+   flottait tout seul dans le noir.
+
+   Il reprend donc --nait, la variable de naissance écrite par scanHero() :
+   0 au premier pixel, 1 à 13 % de la piste. Le pot et la figurine se
+   matérialisent ensemble, pendant que les lettres se posent.
+
+   --nait pilote aussi .scanSolid et .scanWrap, ne pas y toucher.
+   -------------------------------------------------------------------------- */
+.potSolide{opacity:var(--nait,1) !important}
+
+
+/* --------------------------------------------------------------------------
+   9. LE TITRE DU HERO EN NEWAKE (essai du 24/08)
+
+   Newake n'a QU'UNE graisse : le font-weight:800 pose en ligne dans le JSX
+   ferait fabriquer un gras de synthese par le navigateur — des contours
+   epaissis a la va-vite, qui bavent sur une capitale de 90 px. On le ramene
+   donc a 400.
+
+   Le fichier est un .otf, pas un .woff2 : la conversion demande Brotli, qui
+   n'etait pas dispo. 68 Ko, charge une fois — a convertir en woff2 le jour
+   ou le poids compte.
+
+   La couleur du titre reste celle du JSX, le blanc pur. Le creme a ete
+   essaye sur les gros titres puis abandonne : il ne survit que sur les
+   petits textes, bloc 10.
+   -------------------------------------------------------------------------- */
+@font-face{
+  font-family:'Newake';
+  src:url(/assets/fonts/NewakeFont-Demo.otf) format('opentype');
+  font-weight:400;font-style:normal;font-display:swap;
+}
+#accueil h1,
+#services h2, #portfolio h2, #processus h2, #apropos h2, #contact h2{
+  font-family:'Newake','Neue Haas Display',sans-serif !important;
+  /* Newake n'a qu'une graisse. Laisser le 700/800 des titres de section
+     ferait fabriquer un gras de synthese, epaissi a la va-vite. */
+  font-weight:400 !important;
+  letter-spacing:calc(1.5*var(--u)) !important;
+}
+/* La TAILLE, elle, ne vaut que sur ordinateur. Ce bloc est en fin de
+   fichier : sans ce garde-fou il passerait devant la regle mobile du bloc
+   @media (max-width:768px), et le titre deborderait sur telephone. */
+@media (min-width:769px){
+  #accueil h1{
+    font-size:calc(76*var(--tu)) !important;
+    line-height:calc(70*var(--tu)) !important;
+  }
+  /* la colonne du texte suivait le corps de 67 u : elle etait devenue trop
+     etroite pour « DECOLLER » a 84 u */
+  [data-herocopy]{width:calc(398*var(--u)) !important}
+}
+
+/* LES ACCENTS ETAIENT COUPES — « DECOLLER », « IDEES » sans leur É.
+   Chaque ligne du titre vit dans un <span> en overflow:hidden : c'est lui
+   qui masque les lettres avant qu'elles tombent, on ne peut pas l'ouvrir.
+   Mais la boite de ligne, calee sur un interlignage plus court que le corps,
+   passait SOUS l'accent. On agrandit donc la boite vers le haut sans rien
+   deplacer : padding-top qui ouvre le masque, margin-top negatif de la meme
+   valeur qui rend la place prise. La mise en page est identique au pixel,
+   seul le rognage recule. */
+#accueil h1 > span{
+  padding-top:.16em !important;
+  margin-top:-.16em !important;
+}
+/* « idees » garde le violet de la marque */
+#accueil h1 em{color:var(--violet-b) !important}
+
+
+/* --------------------------------------------------------------------------
+   10. LE CREME, SUR LES PETITS TEXTES SEULEMENT (24/08)
+
+   Le creme releve sur l'affiche Newake a ete essaye sur les titres et le
+   corps de texte : trop chaud face a une palette entierement froide, et il
+   ecrasait le contraste des gros aplats. Les titres et les paragraphes sont
+   donc revenus au blanc d'origine.
+
+   Il reste la ou il apporte quelque chose : les micro-labels, les mentions
+   discretes, le pied de page. Ces textes-la etaient a rgba(255,255,255,.4-.5)
+   — un gris froid, qui sur du noir tire vers le bleu. Le creme a la meme
+   valeur reste lisible et rechauffe les angles morts de la page, sans jamais
+   entrer en concurrence avec un titre.
+   -------------------------------------------------------------------------- */
+:root{--creme:#FFE4CB}
+
+/* [data-chapter] span est SORTI de la liste : c'est le numero de chapitre
+   (« 01 », « 06 »), ecrit en var(--pink-b) dans le JSX. Le creme l'ecrasait
+   et le rendait gris. Il reprend son fuchsia. */
+[data-piece] p, [data-galhead] span, [data-tempied] b,
+footer, footer a, small{
+  color:rgba(255,228,203,.52) !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   11. LES CHAMPS DU FORMULAIRE — gelules creusees
+
+   Ils etaient soulignes d'un simple trait : rien ne disait ou finissait la
+   zone cliquable, et sur un fond noir un trait de 1 px ne se voit pas de
+   loin. Aucune bordure, une ombre INTERNE en haut a gauche : une bordure
+   dessine un contour, une ombre interne creuse un trou.
+
+   Le fond est #0B0A0E et non #000 : sur du noir pur, l'ombre interne noire
+   n'aurait rien a assombrir et le champ resterait invisible. Il faut un
+   ecart de valeur, meme minuscule, pour que le creux existe.
+
+   (Une version en panneau plein facon uiverse a ete essayee puis annulee.)
+
+   !important partout : chaque champ porte son style en ligne dans le JSX
+   (background, border, borderBottom, borderRadius, height, padding).
+   -------------------------------------------------------------------------- */
+#contact input, #contact textarea{
+  background:#0B0A0E !important;
+  border:0 !important;
+  outline:none !important;
+  border-radius:9999px !important;
+  height:auto !important;
+  padding:calc(14*var(--u)) calc(24*var(--u)) !important;
+  color:#fff !important;
+  font-family:inherit;
+  box-shadow:
+    inset calc(2*var(--u)) calc(5*var(--u)) calc(10*var(--u)) rgba(0,0,0,.95),
+    inset 0 0 0 1px rgba(255,255,255,.055) !important;
+  transition:box-shadow .3s ease, background .3s ease !important;
+}
+/* le message n'est pas une gelule : sur trois lignes, un rayon de 9999 px
+   arrondirait les coins jusqu'au milieu du champ */
+#contact textarea{
+  border-radius:calc(22*var(--u)) !important;
+  min-height:calc(124*var(--u)) !important;
+  resize:vertical;
+}
+#contact input::placeholder, #contact textarea::placeholder{
+  color:rgba(255,255,255,.34);
+}
+/* Au focus : AUCUNE COULEUR. #E2006B est une couleur sombre (luminance
+   ~0,25) : en trait de 1 px sur un fond presque noir elle n'eclaircit rien
+   et se lit comme une salissure brunatre. Le focus se dit par la LUMIERE —
+   le fond monte d'un cran, le lisere blanc s'affirme, le creux se resserre. */
+#contact input:focus, #contact textarea:focus{
+  background:#141219 !important;
+  box-shadow:
+    inset calc(1.5*var(--u)) calc(3.5*var(--u)) calc(8*var(--u)) rgba(0,0,0,.88),
+    inset 0 0 0 1px rgba(255,255,255,.16) !important;
+}
+/* Chrome repeint les champs completes automatiquement en jaune, et il le
+   fait avec sa propre ombre interne : on la remplace par la notre, sinon la
+   gelule redevient une case blanche des que le navigateur complete. */
+#contact input:-webkit-autofill,
+#contact input:-webkit-autofill:hover,
+#contact input:-webkit-autofill:focus{
+  -webkit-text-fill-color:#fff !important;
+  caret-color:#fff;
+  box-shadow:
+    inset 0 0 0 calc(100*var(--u)) #0B0A0E,
+    inset calc(2*var(--u)) calc(5*var(--u)) calc(10*var(--u)) rgba(0,0,0,.95),
+    inset 0 0 0 1px rgba(255,255,255,.055) !important;
+}
+
+/* --------------------------------------------------------------------------
+   12. L'INVITE A DEFILER
+
+   La bille descend dans la souris puis disparait, elle ne remonte pas :
+   une bille qui fait l'aller-retour dessine un va-et-vient, or le geste
+   demande n'a qu'un sens. Elle repart du haut par un saut d'opacite a zero,
+   invisible.
+   -------------------------------------------------------------------------- */
+.cueBille{animation:cueBille 1.9s cubic-bezier(.4,0,.2,1) infinite}
+@keyframes cueBille{
+  0%   {transform:translateY(0);       opacity:0}
+  18%  {                               opacity:1}
+  70%  {transform:translateY(11px);    opacity:0}
+  100% {transform:translateY(11px);    opacity:0}
+}
+@media (prefers-reduced-motion:reduce){ .cueBille{animation:none} }
+
+/* --------------------------------------------------------------------------
+   13. L'INVITE A DEFILER — fuchsia, sans halo
+
+   Le neon a ete essaye puis retire : trois drop-shadow empiles sur un objet
+   de 21 px de large font une tache, pas une lumiere. A cette taille la
+   couleur pleine suffit.
+   -------------------------------------------------------------------------- */
+[data-cue] span{color:#FF2C86 !important}
+[data-cue] rect{stroke:#FF2C86 !important;stroke-width:1.6}
+[data-cue] circle{fill:#FF2C86 !important}
