@@ -178,6 +178,27 @@ export default class PixoveryPage extends React.Component {
        animations » est actif en permanence, les reflets de lunettes restaient
        donc figes meme en ?motion=full. On pose la reponse sur <html> pour que
        la CSS puisse s'effacer devant. */
+    /* ?motion=full COLLE MAINTENANT A LA MACHINE.
+       « Reduire les animations » est actif en permanence sur le poste de
+       travail. Sans le parametre, Lenis ne demarre meme pas : le defilement
+       redevient natif, chaque cran de molette est un saut brut, et tout ce
+       qui suit le scroll saute avec. Toutes les recettes de non-fluidite
+       viennent de la, et on l'oublie a chaque rechargement.
+       On le retient donc une fois pour toutes : ?motion=full ecrit le
+       reglage, et aux visites suivantes on le REMET DANS L'URL avant que
+       quoi que ce soit ne la lise. Les dix tests de ce fichier n'ont ainsi
+       rien a savoir de ce mecanisme. ?motion=auto efface le reglage.
+       Aucun effet pour un visiteur : sa memoire locale est vide. */
+    try {
+      const p = new URLSearchParams(window.location.search);
+      if(p.get('motion') === 'full') localStorage.setItem('pixovery-motion', 'full');
+      else if(p.get('motion') === 'auto') localStorage.removeItem('pixovery-motion');
+      else if(localStorage.getItem('pixovery-motion') === 'full'){
+        p.set('motion', 'full');
+        history.replaceState(null, '', window.location.pathname + '?' + p + window.location.hash);
+      }
+    } catch(e){ /* navigation privee, stockage refuse : on continue sans */ }
+
     if(/[?&]motion=full/.test(window.location.search))
       document.documentElement.setAttribute('data-motion', 'full');
 
@@ -233,8 +254,35 @@ export default class PixoveryPage extends React.Component {
        une tuile carree, un tiers des pixels payait du vide sur les cotes.
        A poids egal, le passage au format de l'objet rend l'image nettement
        plus nette. */
-    const N = 72, COLS = 6, PER = 36, TW = 448, TH = 640;
-    const sheets = [new Image(), new Image()];
+    console.log('[pixovery] spin v7 — 90 poses, planche allegee (64 Mo au lieu de 101)');
+    /* UN TOUR COMPLET, MESURE CETTE FOIS.
+       La session precedente avait conclu que « Video sans titre 7 » etait
+       inexploitable : trois segments, chacun un demi-tour suivi d'un arret
+       sur un dos different, aucun verso presentable. Conclusion tiree
+       d'images reduites en 96x54, ou deux dos differents se ressemblent.
+
+       Remesure image par image (largeur du sujet, seuil 40/255, et delta
+       inter-images pour les coupes) : il n'y a QU'UNE coupe franche, a
+       l'image 240. Deux segments, pas trois.
+         - 0 a 239   : un demi-tour puis un arret sur le dos. Inutilisable.
+         - 240 a 720 : DEUX TOURS COMPLETS ET CONTINUS, de 240 images
+                       chacun. Les creux de largeur — le chant du blister —
+                       tombent aux images 311, 431 et 559 : espaces de 120
+                       et 128, soit un demi-tour tous les 4 s. Regulier.
+       Le PREMIER de ces deux tours (241 -> 480) est propre : verso lisible,
+       un seul code-barres, texte coherent. Le second porte le dos rate
+       (« 180 001 180 », deux codes-barres) — c'est lui qu'on avait vu.
+
+       LA PLANCHE proc-v5 EN EST TIREE : 60 poses, une image sur quatre,
+       6 degres par pose, tuiles de 448 x 640 comme avant. 1,75 Mo, 10 x 6.
+       Cadre commun a toutes les poses (boite englobante mesuree sur les 60,
+       plus une marge) : sans cadre commun, le blister se decalerait d'une
+       image a l'autre.
+       PAS DE COUCHE ALPHA, comme la v4 : le fond de la video est du noir
+       pur et la section est en #000. */
+    const N = 90, COLS = 10, PER = 90, TW = 352, TH = 503;
+    const sheets = [new Image()];
+    let bitmaps = null;                 /* les planches decodees une fois pour toutes */
     let vue = -1, prets = 0, rate = false;
 
     /* meme regle que intro() : ?motion=full force la version pleine */
@@ -256,17 +304,45 @@ export default class PixoveryPage extends React.Component {
          (le dos), et l'image suivante saute directement a 0 (la face).
          C'est ca, la teleportation : pas un raccord rate, une case hors
          planche. Le modulo referme la boucle : 72 redevient 0. */
-      const i = (reduce ? Math.round(f / 3) * 3 : Math.round(f)) % N;
+      /* PLUS DE QUANTIFICATION EN MODE REDUIT. Elle arrondissait la pose au
+         multiple de 5, soit des paliers de 15 degres : le tour partait en
+         diaporama. Elle etait la pour economiser des dessins, mais un
+         drawImage depuis une planche deja decodee ne coute rien — ce n'est
+         pas la ce qu'on economise. Si « reduire les animations » est actif,
+         c'est le mouvement d'accompagnement qui est coupe (le zoom, le
+         translate, l'echelle), pas la finesse de la rotation. */
+      /* Plus de modulo : ce n'est plus une boucle mais un aller-retour, la
+         valeur ne peut pas depasser N-1. Un modulo ici ramenerait la pose la
+         plus tournee sur la pose de face — un claquement au bout de la
+         course. On borne. */
+      /* UNE SEULE POSE, NETTE. Le fondu entre deux poses avait ete essaye
+         pour lisser le mouvement sans alourdir la planche : il rendait la
+         rotation floue, deux images du blister se superposant en
+         permanence. Sur un objet a contours durs — un blister sous
+         plastique, du texte imprime — le melange ne se lit pas comme un
+         file de mouvement mais comme une mise au point ratee.
+         La fluidite vient donc du NOMBRE de poses : 90, soit 4 degres par
+         pose. Pourquoi pas 120 : une planche de 120 poses en tuiles de
+         384 x 549 fait 25 Mpx, donc CENT MEGAOCTETS de memoire une fois
+         decodee — a quoi s'ajoutaient les 108 Mo des deux planches du hero.
+         C'est ce qui saccadait. En tuiles de 352 x 503, 90 poses tiennent
+         en 16 Mpx, soit 64 Mo. Le canvas est affiche a environ 360 px de
+         large : la definition suffit toujours. */
+      const i = Math.max(0, Math.min(N - 1, Math.round(f))) % N;
       const zz = Math.round(z * 400) / 400;      /* on ne redessine pas pour rien */
-      if((i === vue && zz === vueZ) || !sheets[0].naturalWidth) return;
+      const src = bitmaps || sheets;
+      if((i === vue && zz === vueZ) || !(bitmaps || sheets[0].naturalWidth)) return;
       vue = i; vueZ = zz;
       const k = (i / PER) | 0, j = i % PER;
       const dw = TW * zz, dh = TH * zz;          /* zoom centre */
       cx.clearRect(0, 0, TW, TH);
-      cx.drawImage(sheets[k], (j % COLS) * TW, ((j / COLS) | 0) * TH, TW, TH,
+      cx.drawImage(src[k], (j % COLS) * TW, ((j / COLS) | 0) * TH, TW, TH,
                    (TW - dw) / 2, (TH - dh) / 2, dw, dh);
     };
 
+    /* (l'afficheur de mesures vert a servi puis a ete retire — il avait
+       revele que Lenis tournait bien et que la geometrie etait correcte,
+       donc que le probleme etait dans la video, pas dans le code) */
     let file = false;
     const cadence = () => {
       file = false;
@@ -305,7 +381,10 @@ export default class PixoveryPage extends React.Component {
          est visible du premier au dernier instant. */
       const rail = tour.parentElement;
       const rr = rail ? rail.getBoundingClientRect() : r;
-      const colle = parseFloat(getComputedStyle(tour).top) || 0;
+      /* getComputedStyle(tour).top a disparu d'ici. Il y etait appele a
+         CHAQUE image pour lire la position collante ; c'est une lecture de
+         style forcee, donc un recalcul de mise en page a chaque frame, en
+         plein defilement. La mesure n'en a plus besoin. */
       /* Le tour se boucle sur les 80 PREMIERS POUR CENT de cette course, pas
          sur la totalite. Raison : le saut du dos a la face que tu voyais a
          la fin. Il ne venait pas d'un raccord rate mais d'une course trop
@@ -315,23 +394,80 @@ export default class PixoveryPage extends React.Component {
          En terminant le tour avant le decollement, la derniere pose est
          atteinte a l'ecran, image par image, et le blister TIENT sa face
          pendant qu'il s'en va. */
-      /* LA DISTANCE DU TOUR NE PEUT PAS DEPASSER LA COURSE REELLE.
-         C'est ici que le tour etait casse. Il y avait un plancher a 900 px,
-         posé pour eviter une rotation trop rapide. Mais la course collee
-         vaut (hauteur du rail - hauteur du blister) : les quatre etapes
-         mesurent ~1070 px et le blister 680 px, donc la course fait
-         ~390 px. Le tour etait donc etale sur 900 px de defilement qui
-         n'existent pas : la figurine atteignait 0,43 de sa boucle — 155°,
-         soit le profil — puis se decollait et repartait de dos. Elle ne
-         faisait JAMAIS son tour.
-         On borne desormais par le haut seulement, et le plafond ne peut
-         pas depasser la course disponible. 0,88 : le tour se termine juste
-         avant le decollement, la pose de face est donc atteinte a l'ecran
-         et tenue pendant que le blister s'en va. */
-      const course = Math.max(1, rr.height - tour.offsetHeight);
-      const vie = Math.min(course * 0.88, 1800);
-      const pv = Math.max(0, Math.min(1, (colle - rr.top) / vie));
-      const pose = (pv * N) % N;
+      /* LE TOUR NE SE JOUE PLUS SUR LA SEULE VIE COLLEE. C'est ca qui le
+         rendait saccade.
+         La course collee vaut (hauteur du rail - hauteur du blister) : les
+         quatre etapes mesurent ~1070 px, le blister 680 px — il reste
+         ~390 px. Faire 360 degres en 390 px de defilement, c'est 3 px de
+         scroll par pose. Un cran de molette en vaut cent : on saute trente
+         poses d'une image a l'autre. Aucun nombre d'images ne repare ca —
+         on ne voyait pas une rotation lente et hachee, on voyait une
+         toupie echantillonnee une fois par cran.
+         Deux versions precedentes avaient masque le probleme au lieu de le
+         voir : un plancher a 900 px, qui etalait le tour sur une course
+         inexistante et l'arretait a 155 degres ; puis la course reelle, qui
+         faisait bien le tour complet mais en 340 px.
+
+         LA BONNE MESURE EST LA TRAVERSEE DU RAIL PAR LA FENETRE. Elle
+         demarre quand le haut du rail touche le bas de l'ecran — le blister
+         apparait — et se termine quand le bas du rail passe le haut de
+         l'ecran — il est parti. Elle vaut donc (hauteur d'ecran + hauteur du
+         rail), soit ~1970 px : cinq fois plus, et le blister est a l'ecran
+         d'un bout a l'autre. Le collage n'a plus a etre pris en compte, il
+         ne fait que decider OU le blister se tient pendant que la mesure,
+         elle, ne cesse jamais d'avancer.
+         Aux deux extremites la valeur retombe sur la pose 0, la face : il
+         arrive de face et il repart de face.
+         Le plafond a 2600 px sert aux ecrans bas ou aux rails tres longs :
+         au-dela, le tour se termine avant la sortie et le blister tient sa
+         face en s'en allant. */
+      const traversee = Math.min(vh + rr.height, 2600);
+      const pv = Math.max(0, Math.min(1, (vh - rr.top) / traversee));
+      /* SENS INVERSE, ET LA FACE AU MILIEU DE LA TRAVERSEE.
+         La version precedente posait la face aux DEUX extremites : le
+         blister arrivait de face en bas de l'ecran et repartait de face en
+         haut. Joli sur le papier, absurde a l'usage — aux deux extremites il
+         est a moitie hors champ et en train de se fondre. Pendant tout le
+         temps ou on le regarde vraiment, c'est-a-dire pendant qu'on lit les
+         quatre etapes, il montrait son dos. On ne voyait jamais le perso.
+         Le demi-tour d'avance (+ N/2) place la face a pv = 0,5, quand le
+         blister est au centre de l'ecran. Il entre de dos, se retourne vers
+         nous pendant la lecture, et repart en se retournant a nouveau.
+         Le signe moins inverse le sens de rotation. */
+      /* |2·pv − 1| vaut 1 aux deux extremites de la traversee et 0 au
+         milieu. La pose 0 etant celle de face, le blister entre de trois
+         quarts, se presente de face quand il est au centre de l'ecran —
+         c'est-a-dire pendant qu'on lit les etapes — et repart de trois
+         quarts. La face tombe la ou on le regarde, pas la ou il sort du
+         champ : c'est l'erreur que j'avais faite en la calant aux deux
+         bouts. */
+      /* UN TOUR DE 360 DEGRES QUI S'ARRETE DE FACE.
+         `u` va de -1 a +1 sur la traversee, donc l'angle de -180 a +180 :
+         une rotation continue, dans le meme sens du debut a la fin. Le
+         blister entre de dos, se retourne vers nous, et repart en montrant
+         de nouveau son dos. La face tombe a pv = 0,5, quand il est au
+         centre de l'ecran — la ou on le regarde vraiment, pendant qu'on lit
+         les quatre etapes. La caler aux extremites (erreur d'une version
+         precedente) revenait a la montrer pendant qu'il est a moitie hors
+         champ et en fondu.
+
+         LE PALIER. Sans zone morte, la face n'est qu'un point de passage :
+         il l'atteint et repart aussitot. Sur PALIER de la traversee (16 %),
+         la pose reste a 0 et le blister TIENT sa face.
+         Le smoothstep n'est pas une coquetterie : sans lui la rotation
+         repart a pleine vitesse en sortant du palier, et l'arret se lit
+         comme un a-coup. Avec, la vitesse repart de zero.
+
+         LE MODULO EST DE RETOUR, et il est correct ici : ce n'est plus un
+         aller-retour borne mais une boucle. -30 poses et +30 poses sont la
+         MEME pose, le dos. Sans lui, un index negatif sortirait de la
+         planche. */
+      const PALIER = 0.16;
+      const u = pv * 2 - 1;
+      const au = Math.abs(u);
+      const s2 = Math.max(0, (au - PALIER) / (1 - PALIER));
+      const e2 = s2 * s2 * (3 - 2 * s2);
+      const pose = (((u < 0 ? -1 : 1) * e2 * (N / 2)) + N) % N;
       draw(pose, reduce ? 1 : ZOOM0 + (1 - ZOOM0) * ze);
       /* Fondu a l'entree uniquement. Il y avait aussi une sortie — la
          figurine s'effacait sur les 16 derniers pourcents de la section —
@@ -354,18 +490,83 @@ export default class PixoveryPage extends React.Component {
     };
     const queue = () => { if(file) return; file = true; requestAnimationFrame(cadence); };
 
+    const demarre = () => {
+      /* L'APPARITION BRUSQUE. Le fondu d'entree est pilote par le
+         defilement : il suppose qu'on arrive par le haut, progressivement.
+         Mais si les planches finissent d'arriver alors que la section est
+         DEJA a l'ecran, la premiere valeur calculee est deja 1 — le blister
+         se materialise d'un coup, sans transition, en plein milieu.
+         On donne donc une transition CSS a la toute premiere valeur, puis on
+         la retire : apres ca, l'opacite doit suivre le scroll a l'image
+         pres, et une transition la ferait trainer. */
+      tour.style.transition = 'opacity .5s ease';
+      setTimeout(() => { tour.style.transition = ''; }, 560);
+      draw(0, ZOOM0); cadence();   /* le zoom manquait : draw(0) posait un NaN */
+      /* ON SE BRANCHE SUR LENIS, PAS SUR L'EVENEMENT `scroll`.
+         Deuxieme cause du hachage. Lenis interpole le defilement dans son
+         propre rAF ; il pose la nouvelle position, le navigateur emet
+         `scroll`, et queue() reportait alors le dessin a l'image SUIVANTE.
+         Le blister etait donc systematiquement une image en retard sur le
+         reste de la page — et quand le navigateur regroupait deux
+         evenements `scroll`, le retard devenait irregulier. C'est ca qu'on
+         lit comme un a-coup.
+         `lenis.on('scroll')` se declenche a l'interieur de la meme image que
+         le deplacement : on dessine la position du moment, pas celle d'avant.
+         C'est deja la methode employee ailleurs dans ce fichier. */
+      if(this.lenis){
+        this.lenis.on('scroll', cadence);
+        this.cleanups.push(() => { if(this.lenis) this.lenis.off('scroll', cadence); });
+      } else {
+        this.on(window, 'scroll', queue, {passive: true});
+      }
+      this.on(window, 'resize', queue);
+    };
+
     const pret = () => {
       if(++prets < sheets.length) return;
       if(rate){ tour.style.display = 'none'; return; }
-      draw(0); cadence();
-      this.on(window, 'scroll', queue, {passive: true});
-      this.on(window, 'resize', queue);
+      /* TROISIEME CAUSE : le decodage. Une planche fait 4480 x 3840. Tant
+         qu'elle reste un <img>, le navigateur est libre de jeter son image
+         decodee et de la refaire au prochain drawImage — ce qui tombe en
+         plein defilement et coute une image entiere. createImageBitmap la
+         decode UNE fois, definitivement, et drawImage n'a plus qu'a copier.
+         Si le navigateur ne connait pas createImageBitmap ou echoue, on
+         garde les <img> : c'est degrade, pas casse. */
+      if(window.createImageBitmap){
+        Promise.all(sheets.map(im => createImageBitmap(im)))
+          .then(bm => {
+            bitmaps = bm;
+            /* draw() lit `bitmaps || sheets` : une fois les bitmaps la, les
+               <img> ne servent plus a rien et gardent une deuxieme copie
+               decodee de la planche. On les vide. */
+            sheets.forEach(im => { im.onload = im.onerror = null; im.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='; });
+            demarre();
+          })
+          .catch(demarre);
+      } else demarre();
     };
-    sheets.forEach((im, k) => {
-      im.onload = pret;
-      im.onerror = () => { rate = true; pret(); };
-      im.src = '/assets/proc-' + 'ab'[k] + '.webp';
-    });
+    /* CHARGEMENT DIFFERE. La planche pese 1,2 Mo — plus rien a voir avec les
+       5,3 Mo d'avant, mais on la demande quand meme quatre ecrans a
+       l'avance : le telechargement commence des Services et a tout le temps
+       de finir pendant qu'on lit le portfolio. Une marge d'un ecran et demi
+       etait trop juste, le blister arrivait parfois alors qu'on le regardait
+       deja — c'etait l'apparition brutale. */
+    const charge = () => {
+      sheets.forEach((im, k) => {
+        im.onload = pret;
+        im.onerror = () => { rate = true; pret(); };
+        im.src = '/assets/proc-v7.webp';
+      });
+    };
+    if('IntersectionObserver' in window){
+      const obs = new IntersectionObserver(en => {
+        if(!en[0].isIntersecting) return;
+        obs.disconnect();
+        charge();
+      }, {rootMargin: '400% 0px'});
+      obs.observe(sec);
+      this.cleanups.push(() => obs.disconnect());
+    } else charge();
   }
 
 
@@ -430,13 +631,22 @@ export default class PixoveryPage extends React.Component {
        raccourcit le geste au lieu de le supprimer. Degrader, jamais couper. */
     const LANCER = this.lenis ? 1 : 0.35;
 
-    const DUREE = 640, REPOS = 90, SEUIL = 46, PAUSE = 180;
+    /* CADENCE DE SERVICES — les quatre nombres qui font la vitesse.
+       Valeurs d'origine, si tu veux revenir : 640 / 90 / 46 / 180 et
+       DUREE_L = 900.
+         DUREE  : duree du passage d'un service au suivant, sans Lenis.
+         REPOS  : silence minimal entre deux passages.
+         SEUIL  : molette a cumuler avant de declencher. Le baisser rend la
+                  section nerveuse et fait sauter deux services d'un geste.
+         PAUSE  : silence apres lequel le geste avale est reouvert. */
+    const DUREE = 460, REPOS = 70, SEUIL = 46, PAUSE = 120;
     /* Duree du passage quand c'est Lenis qui bouge la page. Plus longue
        que DUREE : maintenant que tout le site glisse sur ~1 s, un
-       passage de service en 640 ms tranchait — il paraissait sec par
-       contraste alors qu'il ne l'etait pas avant. C'est le reglage a
-       toucher si le passage te parait trop lent ou trop mou. */
-    const DUREE_L = 900;
+       passage de service en 640 ms tranchait. Ramene a 600 ms : Redha
+       trouvait la section trop lente a parcourir. C'EST LE REGLAGE A
+       TOUCHER en premier — c'est lui qui agit quand Lenis est la, donc
+       dans la quasi-totalite des visites. */
+    const DUREE_L = 620;
 
     let index = 0, verrou = false, file = false, garde = null, repos = 0;
     /* Instant ou la section vient de prendre l'ecran. On s'en sert pour
@@ -746,12 +956,21 @@ export default class PixoveryPage extends React.Component {
       const delta = cible - depart;
       if(Math.abs(delta) < 2){ verrou = false; queue(); return; }
       verrou = true;
-      /* easeInOutCubic. Le reste du site utilise cubic-bezier(.16,1,.3,1),
-         mais cette courbe-la place 80 % du trajet dans le premier quart :
-         parfait pour une apparition, mauvais pour un passage de page — la
-         parallaxe defilerait trop vite pour etre lue. Ici on veut du temps
-         au milieu du mouvement. */
-      const courbe = t => (t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+      /* LA COURBE DU PASSAGE — melange, et c'est voulu.
+         easeInOutCubic seul (ce qu'il y avait) part de zero : le service ne
+         bouge pas pendant les 100 premieres millisecondes, on croit que le
+         geste n'a pas ete pris. easeOutCubic seul part a pleine vitesse : la
+         parallaxe defile trop vite pour etre lue, c'est le defaut note plus
+         haut sur cubic-bezier(.16,1,.3,1).
+         35 % de l'un, 65 % de l'autre : le depart repond tout de suite, le
+         milieu garde du temps, l'arrivee se pose sans marche. C'est le poids
+         (.65) qu'on touche pour rendre le passage plus glissant — pas la
+         duree. */
+      const courbe = t => {
+        const io = t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        const out = 1 - Math.pow(1 - t, 3);
+        return io * .35 + out * .65;
+      };
 
       /* Quand Lenis est la, c'est LUI qui bouge la page. On ne superpose
          plus un window.scrollTo frame par frame : Lenis resynchronise sa
@@ -966,6 +1185,36 @@ export default class PixoveryPage extends React.Component {
     /* clic sur un lien interne : on vise la ligne numérotée de la section,
        pas le haut de la section (qui tombe 110u plus haut à cause du padding) */
     const HDR = 76, GAP = 18;                       // en px maquette
+    /* Le voyage se fait RIDEAU BAISSE. On coupe au noir, on pose la page
+       d'un coup (`immediate`), puis on rouvre : la section apparait au lieu
+       de defiler. `navVol` reste leve tout du long — c'est lui qui empeche
+       Services de recadrer la page pendant qu'on est pose chez lui. On rend
+       la vue deux frames apres la pose : une seule frame laisse passer un
+       eclair de l'ancienne section. */
+    const voile = this.q('[data-voile]');
+    const vole = (y, href) => {
+      clearTimeout(this.navGarde); clearTimeout(this.voileT);
+      this.navVol = true;
+      const arrive = () => {
+        if(this.lenis) this.lenis.scrollTo(y, { immediate: true, force: true });
+        else window.scrollTo(0, y);
+        try { history.replaceState(null, '', href); } catch(_){}
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if(voile){
+            voile.style.transition = 'opacity .5s cubic-bezier(.16,1,.3,1)';
+            voile.style.opacity = '0';
+          }
+          this.navGarde = setTimeout(() => {
+            this.navVol = false;
+            if(this.navReset) this.navReset();
+          }, 540);
+        }));
+      };
+      if(!voile){ arrive(); return; }
+      voile.style.transition = 'opacity .26s ease';
+      voile.style.opacity = '1';
+      this.voileT = setTimeout(arrive, 270);
+    };
     this.qa('a[href^="#"]').forEach(a => {
       this.on(a, 'click', e => {
         const href = a.getAttribute('href');
@@ -981,36 +1230,14 @@ export default class PixoveryPage extends React.Component {
            point de depart d'animation, pas un etat a montrer a quelqu'un
            qui DEMANDE a revenir a l'accueil. */
         if(href === '#accueil' && this.heroPoseY){
-          const y = this.heroPoseY();
-          this.navVol = true;
-          const pose = () => { this.navVol = false; if(this.navReset) this.navReset(); };
-          clearTimeout(this.navGarde);
-          this.navGarde = setTimeout(pose, 1600);
-          if(this.lenis) this.lenis.scrollTo(y, { duration: 1.15, force: true, onComplete: pose });
-          else window.scrollTo({ top: y, behavior: 'smooth' });
-          try { history.replaceState(null, '', href); } catch(_){}
+          vole(this.heroPoseY(), href);
           return;
         }
         if(mark){
           const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--u')) || 1;
           top = Math.max(0, window.scrollY + mark.getBoundingClientRect().top - (HDR + GAP) * u);
         }
-        /* global.css ne pose plus scroll-behavior:smooth (il doublait le
-           lissage de Lenis). Quand Lenis est la, c'est lui qui glisse ;
-           sinon on garde le 'smooth' natif comme repli. */
-        /* Le vol est annonce : la section Services ne doit pas se recadrer
-           pendant qu'on la traverse (voir services()). Le drapeau retombe a
-           l'arrivee, ou au pire sur le minuteur de securite. */
-        this.navVol = true;
-        const atterri = () => {
-          this.navVol = false;
-          if(this.navReset) this.navReset();
-        };
-        clearTimeout(this.navGarde);
-        this.navGarde = setTimeout(atterri, 1600);
-        if(this.lenis) this.lenis.scrollTo(top, { duration: 1.15, force: true, onComplete: atterri });
-        else window.scrollTo({ top: top, behavior: 'smooth' });
-        try { history.replaceState(null, '', href); } catch(_){}
+        vole(top, href);
       });
     });
   }
@@ -1167,8 +1394,12 @@ export default class PixoveryPage extends React.Component {
     if(!gal || !track) return;
     const ambient = gal.querySelector('[data-ambient]');
     const idxOut = this.q('[data-galindex]');
+    /* Le total etait ecrit en dur dans le markup : il annonçait encore 11
+       pieces alors que le ruban en comptait 13. On le lit du DOM. */
+    const totOut = this.q('[data-galtotal]');
     const prev = this.q('[data-galprev]'), next = this.q('[data-galnext]');
     const pieces = this.qa('[data-piece]');
+    if(totOut) totOut.textContent = String(pieces.length).padStart(2, '0');
     const rail = this.q('[data-galrail]'), railBar = this.q('[data-galrailbar]');
     const ACC = {violet:'rgba(143,43,255,.07)', pink:'rgba(236,0,112,.07)'};
     let maxShift = 0, active = -1, horizontal = true, x = 0;
@@ -1362,7 +1593,8 @@ export default class PixoveryPage extends React.Component {
 
     /* plein écran au clic sur un visuel */
     const lb = this.q('[data-lightbox]'), lbBox = this.q('[data-lbbox]'), lbImg = this.q('[data-lbimg]');
-    const lbT = this.q('[data-lbtitle]'), lbM = this.q('[data-lbmeta]');
+    const lbT = this.q('[data-lbtitle]'), lbM = this.q('[data-lbmeta]'), lbTx = this.q('[data-lbtexte]');
+    const lbT2 = this.q('[data-lbtitle2]'), lbM2 = this.q('[data-lbmeta2]');
     /* bascule "taille reelle" : par defaut le visuel remplit l'ecran sans
        jamais depasser sa taille naturelle ; un clic dessus passe au 1:1 et
        rend le fond defilable pour parcourir l'image. */
@@ -1392,14 +1624,46 @@ export default class PixoveryPage extends React.Component {
         lb.scrollTop = 0; lb.scrollLeft = 0;
       }
     };
+    /* `data-lenis-prevent` est pose sur [data-lightbox] : Lenis ignore
+       entierement les evenements dont le chemin le traverse, AVANT son
+       preventDefault. Sans lui, `lenis.stop()` bloquerait aussi le
+       defilement du panneau de texte et celui de l'image en 1:1.
+
+       Position de la page au moment de l'ouverture. `overflow:hidden` sur le
+       body prive le document de sa hauteur : le navigateur ramene le scroll a
+       zero, et en refermant on se retrouvait sur le hero au lieu du ruban.
+       On bloque donc par Lenis quand il est la — il fait un blocage franc sans
+       toucher a la mise en page — et on repose la position dans tous les cas. */
+    let lbY = 0;
     const closeLb = () => {
       if(!lb) return;
       setZoom(false);
       lb.style.opacity = '0'; lb.style.visibility = 'hidden'; lb.setAttribute('aria-hidden', 'true');
       if(lbBox) lbBox.style.transform = 'scale(.94) translateY(calc(16*var(--u)))';
-      document.body.style.overflow = '';
+      if(this.lenis) this.lenis.start(); else document.body.style.overflow = '';
+      /* ON REPOSE LA PAGE SUR LE RUBAN, ET ON INSISTE.
+         Une seule remise en position ne tient pas : plusieurs mecaniques
+         reagissent au scroll dans les instants qui suivent la reouverture
+         (le recadrage de Services, la pose du hero), et la derniere qui
+         parle gagne. On repose donc la position sur quatre passes reparties
+         sur 200 ms, et on leve `navVol` pendant ce temps — c'est le drapeau
+         que `cadence()` respecte deja pour laisser passer un lien de menu. */
+      const cible = lbY > 4 ? lbY : (this.q('#portfolio') ? this.q('#portfolio').offsetTop : 0);
+      const pose = () => {
+        if(this.lenis) this.lenis.scrollTo(cible, {immediate: true, force: true});
+        else window.scrollTo(0, cible);
+      };
+      this.navVol = true;
+      pose();
+      requestAnimationFrame(pose);
+      setTimeout(pose, 70);
+      setTimeout(() => {
+        pose();
+        this.navVol = false;
+        if(this.navReset) this.navReset();
+      }, 200);
     };
-    if(lbImg) this.on(lbImg, 'click', e => { e.stopPropagation(); setZoom(!zoomed); });
+    if(lbImg) this.on(lbImg, 'click', e => { e.stopPropagation(); if(this.lbFiche) return; setZoom(!zoomed); });
     const openLb = piece => {
       if(!lb || !lbImg) return;
       const m = piece.querySelector('[data-piecemedia]'); if(!m) return;
@@ -1408,12 +1672,38 @@ export default class PixoveryPage extends React.Component {
       const h = piece.querySelector('h3'), tag = piece.querySelector('span[style*="uppercase"]');
       if(lbT) lbT.textContent = h ? h.textContent : '';
       if(lbM) lbM.textContent = tag ? tag.textContent : '';
+      /* La presentation n'existe que sur les pieces qui en portent une :
+         sans elle le paragraphe est replie, pas laisse vide (le gap du
+         figure ajouterait 20u de trou sous la legende). */
+      const txt = piece.querySelector('[data-piecetexte]');
+      /* Deux mises en page pour un seul plein ecran. Une piece qui porte une
+         presentation ouvre la FICHE : image a gauche, texte a droite. Les
+         autres gardent l'image seule et sa legende dessous. Le mode est pose
+         sur [data-lightbox] ; tout le reste est du CSS. */
+      if(lbTx) lbTx.innerHTML = txt ? txt.innerHTML : '';
+      if(lbT2) lbT2.textContent = lbT ? lbT.textContent : '';
+      /* Sur-titre du panneau : la discipline de la vignette, puis le sujet
+         du projet quand l'article en declare un (data-sujet). Deux mots
+         separes d'un point median, comme le reste du site. */
+      if(lbM2){
+        const disc = lbM ? lbM.textContent : '';
+        const suj = piece.dataset.sujet || '';
+        lbM2.textContent = suj ? (disc + ' · ' + suj) : disc;
+      }
+      lb.setAttribute('data-lbmode', txt ? 'fiche' : 'simple');
+      /* le ton de la piece (violet / pink) teinte le sur-titre du panneau */
+      lb.setAttribute('data-lbton', piece.dataset.piece || 'violet');
+      /* En fiche, l'image est cadree dans sa colonne : le 1:1 defilable n'a
+         plus de sens, il ferait sortir le texte de l'ecran. */
+      lbImg.style.cursor = txt ? 'default' : 'zoom-in';
+      this.lbFiche = !!txt;
       lb.style.visibility = 'visible'; lb.setAttribute('aria-hidden', 'false');
       requestAnimationFrame(() => {
         lb.style.opacity = '1';
         if(lbBox) lbBox.style.transform = 'scale(1) translateY(0)';
       });
-      document.body.style.overflow = 'hidden';
+      lbY = window.scrollY;
+      if(this.lenis) this.lenis.stop(); else document.body.style.overflow = 'hidden';
     };
     pieces.forEach(p => {
       const frame = p.querySelector('[data-pieceframe]');
@@ -2307,6 +2597,16 @@ export default class PixoveryPage extends React.Component {
     const DW = CW * 0.50273, DH = CW * 0.77455;
 
     const plein = new Image(), fil = new Image(), repos = new Image();
+    /* LES PLANCHES DU HERO FONT 3320 x 4096 — 54 Mo une fois decodees, DEUX
+       FOIS. Tant qu'elles restent des <img>, le navigateur est libre de
+       jeter l'image decodee et de la refaire au prochain drawImage : ca
+       tombe en plein defilement et coute une image entiere. C'est la cause
+       des saccades, et c'est exactement ce que spin() avait deja corrige de
+       son cote sans que le hero en profite.
+       createImageBitmap decode UNE fois, definitivement. Et on VIDE les
+       <img> juste apres : sans ca la planche existe en double en memoire,
+       le bitmap plus l'image decodee, soit 108 Mo pour rien. */
+    let bmP = null, bmF = null;
     let pretP = false, pretF = false, vue = -1;
     /* La planche filaire est stockee en NIVEAUX DE GRIS : l'intensite du trait
        EST son alpha. En RVBA elle pesait 4 Mo — les traits fins antialiases
@@ -2336,7 +2636,7 @@ export default class PixoveryPage extends React.Component {
     cxG.imageSmoothingQuality = 'high';
     const repeins = (sx, sy) => {
       cxG.clearRect(0, 0, RW, RH);
-      cxG.drawImage(fil, sx, sy, TW, TH, 0, 0, RW, RH);
+      cxG.drawImage(bmF || fil, sx, sy, TW, TH, 0, 0, RW, RH);
       const d = cxG.getImageData(0, 0, RW, RH), px = d.data;
       for(let k = 0; k < px.length; k += 4){
         let a = (px[k] / 255 - BAS) / (HAUT - BAS);
@@ -2350,7 +2650,7 @@ export default class PixoveryPage extends React.Component {
 
     const dessinePlein = (sx, sy) => {
       cxP.clearRect(0, 0, CW, CW);
-      cxP.drawImage(plein, sx, sy, TW, TH, DX, DY, DW, DH);
+      cxP.drawImage(bmP || plein, sx, sy, TW, TH, DX, DY, DW, DH);
     };
 
     /* LA POSE DE REPOS, EN PLEINE DEFINITION.
@@ -2438,16 +2738,16 @@ export default class PixoveryPage extends React.Component {
         const h  = TH * (0.04 + Math.random() * 0.13);
         const y  = Math.random() * (TH - h);
         const dxb = (Math.random() - 0.5) * DW * 0.16;
-        cxP.drawImage(plein, sx, sy + y, TW, h,
+        cxP.drawImage(bmP || plein, sx, sy + y, TW, h,
                       DX + dxb, DY + y * (DH / TH), DW, h * (DH / TH));
       }
       const ec = DW * (0.012 + Math.random() * 0.02);
       cxP.globalCompositeOperation = 'lighter';
       cxP.globalAlpha = 0.55;
       cxP.filter = 'url(#pxRouge)';
-      cxP.drawImage(plein, sx, sy, TW, TH, DX - ec, DY, DW, DH);
+      cxP.drawImage(bmP || plein, sx, sy, TW, TH, DX - ec, DY, DW, DH);
       cxP.filter = 'url(#pxCyan)';
-      cxP.drawImage(plein, sx, sy, TW, TH, DX + ec, DY, DW, DH);
+      cxP.drawImage(bmP || plein, sx, sy, TW, TH, DX + ec, DY, DW, DH);
       cxP.filter = 'none';
       cxP.globalAlpha = 1;
       cxP.globalCompositeOperation = 'source-over';
@@ -2477,8 +2777,23 @@ export default class PixoveryPage extends React.Component {
       vue = -1;
     };
     this.cleanups.push(arreteGlitch);
-    plein.onload = () => { pretP = true; vue = -1; dessine(derniere); };
-    fil.onload   = () => { pretF = true; vue = -1; dessine(derniere); };
+    /* Les deux planches decodees une fois pour toutes, puis les <img>
+       liberes (une image 1x1 en data-URI : `src = ''` relancerait une
+       requete vers la page courante). Si createImageBitmap manque ou
+       echoue, on garde les <img> : degrade, pas casse. */
+    const enBitmap = () => {
+      if(bmP || !pretP || !pretF || !window.createImageBitmap) return;
+      Promise.all([createImageBitmap(plein), createImageBitmap(fil)])
+        .then(([a, b]) => {
+          bmP = a; bmF = b;
+          plein.onload = fil.onload = null;
+          plein.src = fil.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+          vue = -1; dessine(derniere);
+        })
+        .catch(() => {});
+    };
+    plein.onload = () => { pretP = true; vue = -1; dessine(derniere); enBitmap(); };
+    fil.onload   = () => { pretF = true; vue = -1; dessine(derniere); enBitmap(); };
     /* Noms versionnes : une planche precedente avait des tuiles de 235 px de
        large. Lue avec TW = 332, elle derive vers la droite d'image en image —
        c'est exactement le decalage qu'on voyait. Un nom neuf coupe court a
@@ -2849,12 +3164,12 @@ export default class PixoveryPage extends React.Component {
           </div>
         </section><section id="portfolio" data-gallery="1" data-screen-label="Portfolio" style={{position: "relative", background: "#000", scrollMarginTop: "calc(76*var(--u))"}}>
           <i data-ambient="1" aria-hidden="true" style={{position: "absolute", inset: "0", pointerEvents: "none", zIndex: "0", background: "radial-gradient(34% 34% at 36% 40%, var(--accent, rgba(143,43,255,.075)) 0%, rgba(0,0,0,0) 100%)", transition: "background 1.1s ease"}}></i>
-          <div style={{position: "relative", display: "flex", flexDirection: "column", justifyContent: "center", overflow: "hidden", zIndex: "1", padding: "calc(45*var(--u)) 0 calc(50*var(--u))"}}>
-            <header data-galhead="1" style={{display: "grid", gridTemplateColumns: "calc(52*var(--u)) 1fr auto", alignItems: "center", columnGap: "calc(20*var(--u))", rowGap: "calc(22*var(--u))", padding: "0 calc(82*var(--u)) calc(30*var(--u))"}}>
+          <div style={{position: "relative", display: "flex", flexDirection: "column", justifyContent: "center", overflow: "hidden", zIndex: "1", padding: "calc(12*var(--u)) 0 calc(30*var(--u))"}}>
+            <header data-galhead="1" style={{display: "grid", gridTemplateColumns: "calc(52*var(--u)) 1fr auto", alignItems: "center", columnGap: "calc(20*var(--u))", rowGap: "calc(22*var(--u))", padding: "0 calc(82*var(--u)) calc(22*var(--u))"}}>
               <span style={{gridColumn: "1", fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>02</span>
               <span data-rule="1" style={{gridColumn: "2", height: "1px", background: "rgba(255,255,255,.16)", transform: "scaleX(0)", transformOrigin: "left", transition: "transform 1.2s cubic-bezier(.16,1,.3,1) .1s"}}></span>
               <div style={{gridColumn: "3", gridRow: "2", alignSelf: "center", display: "flex", alignItems: "center", gap: "calc(26*var(--u))"}}>
-                <span style={{fontSize: "calc(13*var(--tu))", letterSpacing: "calc(1.5*var(--u))", color: "rgba(255,255,255,.4)"}}><em data-galindex="1" style={{fontStyle: "normal", color: "#fff", fontWeight: "600"}}>01</em> / <i style={{fontStyle: "normal"}}>11</i></span>
+                <span style={{fontSize: "calc(13*var(--tu))", letterSpacing: "calc(1.5*var(--u))", color: "rgba(255,255,255,.4)"}}><em data-galindex="1" style={{fontStyle: "normal", color: "#fff", fontWeight: "600"}}>01</em> / <i data-galtotal="1" style={{fontStyle: "normal"}}>11</i></span>
                 <div style={{display: "flex", gap: "calc(8*var(--u))"}}>
                   <button data-galprev="1" aria-label="Projet précédent" data-magnetic="1" style={{width: "calc(44*var(--u))", height: "calc(44*var(--u))", borderRadius: "50%", border: "1px solid rgba(255,255,255,.18)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "calc(15*var(--tu))", transition: "border-color .3s ease,background .3s ease,transform .3s ease"}}>←</button>
                   <button data-galnext="1" aria-label="Projet suivant" data-magnetic="1" style={{width: "calc(44*var(--u))", height: "calc(44*var(--u))", borderRadius: "50%", border: "1px solid rgba(255,255,255,.18)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "calc(15*var(--tu))", transition: "border-color .3s ease,background .3s ease,transform .3s ease"}}>→</button>
@@ -2866,125 +3181,383 @@ export default class PixoveryPage extends React.Component {
             </header>
 
             <div data-galtrack="1" style={{display: "flex", alignItems: "center", gap: "calc(46*var(--u))", padding: "calc(46*var(--u)) calc(82*var(--u)) 0", willChange: "transform", cursor: "grab", touchAction: "pan-y"}}>
-              <article data-piece="violet" data-projet="/projets/kabuki-sushi.html" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+              <article data-piece="violet" data-sujet="Disco, funk &amp; synthwave" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
                 <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>01</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/affiche-soiree-funky-night-another-world.webp" alt="Affiche de soirée Funky Night : illustration néon rétro années 80, soirée funk disco house à Toulouse" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Affiche événementielle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Funky Night</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Affiche et supports réseaux</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Funky Night est une soirée événementielle organisée au bar L’Autruche à Toulouse, autour des univers disco, funk et synthwave. L’affiche a été conçue pour donner à l’événement une identité visuelle forte et immédiatement reconnaissable.</p>
+                    <h4>Concept graphique</h4>
+                    <p>La création repose sur un photomontage mettant en scène une femme au code vestimentaire rétro-futuriste, inspiré des années 80 et de l’esthétique synthwave. La tenue, les lunettes, la coiffure et le traitement de l’image construisent un personnage directement associé à cet univers.</p>
+                    <p>La composition est renforcée par une palette de couleurs néon, des formes géométriques, des effets lumineux et une typographie inspirée des codes graphiques de la période. L’ensemble crée une ambiance nocturne et festive tout en évoquant l’univers musical de la soirée.</p>
+                    <h4>Supports</h4>
+                    <p>L’affiche a été conçue pour assurer la promotion de l’événement, aussi bien en affichage qu’en communication numérique.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Affiche événementielle · Photomontage · Direction artistique · Retouche photo · Typographie · Composition graphique</p>
+                  </div>
+                </div>
+              </article>
+              <article data-piece="pink" data-sujet="Restaurant japonais" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>02</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-restaurant-sushi-kabuki-sushi.webp" alt="Identité visuelle Kabuki Sushi : logo mascotte, enseigne, packaging et menu de restaurant japonais" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Kabuki Sushi</h3>
                   <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et menu</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Pour Kabuki Sushi, l’identité visuelle joue sur un univers japonais à la fois marqué et accessible. Le rouge et le noir donnent à la marque une présence forte, tandis que le personnage central apporte une touche plus légère et originale.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le logo met en scène un personnage chibi inspiré du théâtre kabuki, volontairement caricatural et comique. Ses proportions exagérées et son expression lui donnent un côté sympathique et mémorable, tout en créant un lien immédiat avec l’univers japonais. La typographie, inspirée du geste du pinceau, complète cette direction graphique plus spontanée et artisanale.</p>
+                    <h4>Déclinaisons</h4>
+                    <p>L’identité a été adaptée à différents supports, notamment l’enseigne, les sacs et les emballages. Le personnage permet également de donner une vraie personnalité à la marque et de créer un fil conducteur entre les différents supports.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Identité visuelle · Packaging · Supports de communication</p>
+                  </div>
                 </div>
               </article>
-              <article data-piece="pink" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>02</span>
-                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
-                  <img data-piecemedia="1" src="/assets/portfolio/creation-logo-identite-visuelle-donuts-crazy-donutz.webp" alt="Création de logo et identité visuelle Crazy Donutz : packaging, boîtes et carte pour une boutique de donuts" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
-                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
-                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
-                </div>
-                <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
-                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Crazy Donutz</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et carte</p>
-                </div>
-              </article>
-              <article data-piece="violet" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+              <article data-piece="violet" data-sujet="Restaurant de smash burgers" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
                 <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>03</span>
-                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
-                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-marque-sport-cyclisme-ashkan-sports.webp" alt="Identité visuelle Ashkan Sports : logo, étiquettes et accessoires pour une marque de sport et cyclisme" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
-                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
-                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
-                </div>
-                <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
-                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Ashkan Sports</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et déclinaisons boutique</p>
-                </div>
-              </article>
-              <article data-piece="pink" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>04</span>
-                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
-                  <img data-piecemedia="1" src="/assets/portfolio/creation-logo-livraison-repas-bring-eat.webp" alt="Création de logo Bring Eat : identité et supports pour un service de livraison de repas" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
-                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
-                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
-                </div>
-                <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
-                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Bring Eat</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et supports livraison</p>
-                </div>
-              </article>
-              <article data-piece="violet" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>05</span>
-                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
-                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-bar-cocktails-bikini-bar.webp" alt="Identité visuelle Bikini Bar : logo néon rose, carte de cocktails et signalétique de bar" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
-                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
-                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
-                </div>
-                <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
-                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Bikini Bar</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, carte et signalétique</p>
-                </div>
-              </article>
-              <article data-piece="pink" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>06</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/creation-logo-burger-fast-food-top-bun.webp" alt="Création de logo Top Bun : déclinaisons du logo et packaging pour un fast-food burger" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Top Bun</h3>
                   <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et packaging fast-food</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Pour Top Bun, l’identité visuelle reprend les codes d’un restaurant de burgers artisanaux à travers une direction graphique simple, colorée et immédiatement identifiable. Le rose et le jaune apportent une présence énergique, tout en donnant à la marque un univers visuel cohérent avec son offre.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le logo repose sur une construction typographique compacte autour du nom TOP BUN. Le O devient l’élément central du symbole : ses formes horizontales évoquent directement les différentes couches d’un burger, tandis que sa couleur jaune rappelle le pain et les ingrédients du produit. Cette transformation permet d’intégrer l’univers du smash burger directement dans le nom, sans avoir besoin d’ajouter une illustration indépendante.</p>
+                    <h4>Déclinaisons</h4>
+                    <p>L’identité a été pensée pour fonctionner aussi bien sur des fonds clairs que foncés. Elle se décline notamment sur les emballages, les sacs et les gobelets, où la construction compacte du logo reste facilement reconnaissable.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Identité visuelle · Packaging · Supports de communication</p>
+                  </div>
                 </div>
               </article>
-              <article data-piece="violet" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+              <article data-piece="pink" data-sujet="Vente et réparation de vélos" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>04</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-marque-sport-cyclisme-ashkan-sports.webp" alt="Identité visuelle Ashkan Sports : logo, étiquettes et accessoires pour une marque de sport et cyclisme" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Ashkan Sports</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et déclinaisons boutique</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Pour Ashkan Sports, l’identité visuelle a été pensée autour de l’univers du vélo, avec un symbole simple qui permet d’identifier rapidement l’activité. Le rouge, le noir et le blanc donnent à la marque une identité sportive et marquée, adaptée à une enseigne spécialisée dans la vente et la réparation de vélos.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le symbole associe les deux initiales de la marque à des éléments directement inspirés du vélo. La partie rouge forme à la fois une roue et un guidon, tandis que sa courbe évoque également la lettre S de « Sports ». La partie blanche reprend quant à elle la lettre A de « Ashkan », dont les lignes suggèrent le cadre d’un vélo.</p>
+                    <p>L’ensemble réunit ainsi les initiales de la marque et son activité dans un symbole compact, sans représenter un vélo de manière littérale.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Identité visuelle · Direction artistique</p>
+                  </div>
+                </div>
+              </article>
+              <article data-piece="violet" data-sujet="Pâtisseries florales &amp; inspirations asiatiques" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>05</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-patisserie-florale-asiatique-petale-imperial.webp" alt="Identité visuelle Pétale Impérial : logo dragon et rose, sac, coffret, boîte à thé et affiche pour une pâtisserie florale" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Pétale Impérial</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et print</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Pétale Impérial développe un univers autour de la pâtisserie florale et des influences asiatiques. L’identité associe une esthétique raffinée à des références graphiques inspirées de l’imaginaire asiatique, avec une palette dominée par le rouge, le blanc et des touches plus chaleureuses.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le logo associe un dragon et une rose dans une même composition. Le dragon évoque directement l’univers asiatique, tandis que la fleur fait référence à l’approche florale de la marque. Leur interaction crée un symbole à la fois élégant et facilement identifiable, qui résume les deux principales inspirations du projet.</p>
+                    <h4>Déclinaisons</h4>
+                    <p>L’identité a été pensée pour fonctionner sur différents supports de communication et de présentation : packaging, sacs, supports imprimés et éléments de décoration. L’illustration du dragon et de la rose permet de conserver une présence visuelle forte tout en s’adaptant aux différents formats.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Identité visuelle · Illustration · Print</p>
+                  </div>
+                </div>
+              </article>
+              <article data-piece="pink" data-sujet="Bar lounge &amp; cocktails" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>06</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-bar-cocktails-bikini-bar.webp" alt="Identité visuelle Bikini Bar : logo néon rose, carte de cocktails et signalétique de bar" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Bikini Bar</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, carte et signalétique</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Bikini Bar est un concept de bar lounge à l’ambiance sensuelle, pensé autour des cocktails, de la nuit et d’une identité visuelle assumée. L’univers graphique joue sur des contrastes forts entre le noir et le rose pour créer une atmosphère intimiste et sophistiquée.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le logo repose sur une double lecture graphique : la silhouette d’un pubis féminin se fond dans la forme d’un verre à cocktail. Le triangle central suggère à la fois le verre et son contenu, tandis que les courbes extérieures reprennent subtilement les lignes du corps.</p>
+                    <p>Cette association permet de relier directement l’univers féminin, sensuel et festif du concept à celui du bar et des cocktails, avec un symbole qui reste simple et facilement identifiable.</p>
+                    <h4>Déclinaisons</h4>
+                    <p>L’identité a été appliquée à différents éléments de l’univers du bar, notamment la signalétique, le menu et les supports présents au comptoir. Le contraste entre le rose vif et les fonds sombres renforce l’atmosphère nocturne du concept.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Identité visuelle · Direction artistique · Supports de communication</p>
+                  </div>
+                </div>
+              </article>
+              <article data-piece="violet" data-sujet="Livraison de repas" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
                 <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>07</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/creation-logo-livraison-repas-bring-eat.webp" alt="Création de logo Bring Eat : identité et supports pour un service de livraison de repas" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Bring Eat</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et supports livraison</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Bring Eat est un concept de food court virtuel permettant de commander des plats provenant de plusieurs restaurants partenaires au sein d’une seule commande. Le projet réunissait différentes cuisines sous un même toit, avec notamment la participation du chef Danny Khezzar.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le logo représente un livreur à scooter, avec des roues dessinées sous la forme d’un signe infini. Cette construction apporte une sensation de vitesse et de mouvement au symbole, et évoque naturellement le déplacement rapide du livreur entre les cuisines et les clients.</p>
+                    <p>Le personnage et le scooter permettent d’identifier immédiatement l’univers de la livraison, tandis que la forme des roues donne au logo un élément graphique distinctif. L’ensemble reste volontairement simple afin de conserver une bonne lisibilité sur les différents supports.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Direction artistique</p>
+                  </div>
+                </div>
+              </article>
+              <article data-piece="pink" data-sujet="Restaurant chinois" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>08</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-restaurant-chinois-jung-fu.webp" alt="Identité visuelle Jung Fu : logo, enseigne et packaging pour un restaurant chinois" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Jung Fu</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et packaging restaurant</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Jung Fu était un concept de restauration chinoise développé au sein de Bring Eat, spécialisé dans les plats à base de canard. L’identité devait évoquer la cuisine chinoise tout en donnant à la marque une image contemporaine et facilement identifiable.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le logo repose sur un symbole qui associe un canard stylisé à un bol de nouilles, accompagné de baguettes. La silhouette du canard permet d’identifier immédiatement la spécialité du restaurant, tandis que le bol et les baguettes renforcent la référence à la cuisine asiatique.</p>
+                    <p>Le choix d’un jaune doré sur fond noir donne à l’ensemble une présence forte et rappelle certains codes graphiques traditionnels chinois, tout en conservant une esthétique moderne et épurée.</p>
+                    <h4>Déclinaisons</h4>
+                    <p>L’identité a été déclinée sur différents supports liés à la restauration et à la livraison : enseignes, boîtes, gobelets, pochettes pour baguettes et supports imprimés. Des motifs inspirés des codes graphiques asiatiques viennent compléter l’univers visuel.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Identité visuelle · Packaging · Supports de communication</p>
+                  </div>
+                </div>
+              </article>
+              <article data-piece="violet" data-sujet="Mode responsable &amp; seconde main" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>09</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-friperie-mode-seconde-main-o-bonheur-demy.webp" alt="Identité visuelle Ô Bonheur D'Emy : logo, étiquettes et tote bag pour une friperie de mode seconde main" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Ô Bonheur D'Emy</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, étiquettes et textile</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Ô Bonheur d’Emy est une marque spécialisée dans la vente de vêtements de seconde main, créée autour d’une volonté de consommer différemment, de manière plus écologique et locale. La marque propose une sélection de vêtements pour femmes, hommes et enfants, avec une attention particulière portée au choix et à la qualité des articles.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le logo s’articule autour d’un trèfle à quatre feuilles, choisi pour faire directement écho au mot « Bonheur » présent dans le nom de la marque. Les quatre feuilles forment un symbole simple et facilement reconnaissable.</p>
+                    <p>Deux petits yeux et un sourire sont intégrés au centre du trèfle, lui donnant une expression chaleureuse et sympathique. Cette personnification apporte une dimension plus humaine au logo et fait écho à l’esprit familial de la marque.</p>
+                    <p>La palette composée de lilas, bleu-vert et rose vient compléter cet univers doux et coloré, tout en donnant à l’identité une personnalité propre.</p>
+                    <h4>Déclinaisons</h4>
+                    <p>L’identité a été adaptée à différents supports liés à l’univers de la marque, notamment les vêtements, sacs et étiquettes. Le logo conserve ainsi sa lisibilité et son caractère lorsqu’il est appliqué sur différents formats.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Identité visuelle · Supports de communication · Illustration</p>
+                  </div>
+                </div>
+              </article>
+              <article data-piece="pink" data-sujet="Visites virtuelles &amp; photographie" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>10</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-visite-virtuelle-matterport-neometris.webp" alt="Identité visuelle Neometris : logo, plaquette et interface pour un studio de visites virtuelles Matterport" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Neometris</h3>
                   <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, plaquette et interface</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Neometris évolue dans le domaine des visites virtuelles et de la photographie professionnelle, avec un univers tourné vers les nouvelles technologies et la représentation numérique des espaces.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le symbole associe une planète inspirée de Saturne à un réseau de carrés qui se détache progressivement de sa forme. Cette construction fait référence à la représentation numérique et à la transformation d’un espace réel en données virtuelles.</p>
+                    <p>La planète apporte une dimension spatiale et immersive, tandis que le réseau de carrés évoque la modélisation, la numérisation et la construction d’un espace en trois dimensions. La couleur violette renforce cette dimension technologique et contemporaine.</p>
+                    <h4>Livrable</h4>
+                    <p data-lbliste="1">Création du logo · Symbole · Déclinaisons colorimétriques</p>
+                  </div>
                 </div>
               </article>
-              <article data-piece="pink" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>08</span>
+              <article data-piece="violet" data-sujet="Pâtisserie / Donuts" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>11</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/creation-logo-identite-visuelle-donuts-crazy-donutz.webp" alt="Création de logo et identité visuelle Crazy Donutz : packaging, boîtes et carte pour une boutique de donuts" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Crazy Donutz</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et carte</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Pour Crazy Donutz, l’identité visuelle cherche à créer un univers gourmand, fun et facilement reconnaissable. Le jaune, le noir et le blanc donnent à la marque une présence forte, tout en conservant un côté accessible et ludique.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le logo repose sur un jeu graphique autour de la lettre C, qui évoque une mâchoire ouverte venant croquer dans un donut. Cette idée donne directement au symbole son caractère gourmand et décalé, tout en créant une association simple entre le nom de la marque et son produit. Le style volontairement irrégulier renforce le côté spontané et artisanal de l’identité.</p>
+                    <h4>Déclinaisons</h4>
+                    <p>L’identité a été adaptée à différents supports, notamment les boîtes, le packaging, la carte et les gobelets. Le motif de donut est également repris sur certains supports afin de créer une continuité graphique entre les différents éléments de la marque.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Identité visuelle · Packaging · Supports de communication</p>
+                  </div>
+                </div>
+              </article>
+              <article data-piece="pink" data-sujet="Photographie de paysage" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>12</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-photographe-nature-aldo-viola.webp" alt="Identité visuelle Aldo Viola photographe : logo hibou doré à diaphragmes sur pochette noire, tirages noir et blanc et boîtier reflex" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Aldo Viola</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et identité visuelle</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Aldo Viola est un photographe indépendant spécialisé dans les paysages. L’identité visuelle a été pensée autour de la photographie et de l’observation, avec un symbole capable de donner au nom une véritable personnalité.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le logo représente un hibou stylisé, dont les yeux sont remplacés par des objectifs d’appareil photo. Cette association crée un lien direct entre l’animal, symbole d’observation et de précision, et l’activité de photographe.</p>
+                    <p>Les objectifs intégrés aux yeux renforcent l’idée d’un regard attentif porté sur le monde et plus particulièrement sur les paysages. La construction très épurée du symbole permet au logo de rester identifiable aussi bien en grand format que sur des supports plus petits.</p>
+                    <p>Le trait doré sur fond sombre apporte une dimension élégante et premium, en cohérence avec l’univers de la photographie de paysage et la volonté de mettre en valeur les images capturées.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Identité visuelle</p>
+                  </div>
+                </div>
+              </article>
+              <article data-piece="violet" data-sujet="Accessoires de mode" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>13</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-accessoires-mode-pimp-up-paris.webp" alt="Identité visuelle Pimp'Up Paris : logo, coffret et campagne pour une marque d'accessoires de mode" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Pimp'Up</h3>
                   <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et campagne</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Pimp’Up est un projet créé par Candice Maury à Genève, né d’un constat personnel autour des cuissardes : difficulté à trouver des modèles adaptés, talons trop hauts, mollets trop serrés ou encore prix élevés. Le concept propose un accessoire permettant de transformer une paire de chaussures en cuissardes, en s’adaptant aux différents styles et aux différentes morphologies.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le symbole est construit à partir du nom Pimp’Up : il reprend le début du premier « P » et la terminaison en « P » du nom, formant deux lettres qui se font face et créent un symbole parfaitement symétrique.</p>
+                    <p>Les prolongements verticaux sous ces deux formes évoquent deux jambes, tandis que leur terminaison rappelle visuellement des chaussures. Le logo fait ainsi directement référence au principe du produit : transformer une paire de chaussures et prolonger la silhouette jusqu’à la cuisse.</p>
+                    <h4>Déclinaisons</h4>
+                    <p>L’identité a été pensée pour être facilement appliquée aux différents supports de la marque, notamment les accessoires, les emballages et les pochons.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Identité visuelle · Packaging · Supports de communication</p>
+                  </div>
                 </div>
               </article>
-              <article data-piece="violet" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>09</span>
+              <article data-piece="pink" data-sujet="Massage &amp; Wellness" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>14</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
-                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-friperie-mode-seconde-main-o-bohneur-demy.webp" alt="Identité visuelle Ô Bohneur D'Emy : logo, étiquettes et tote bag pour une friperie de mode seconde main" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <img data-piecemedia="1" src="/assets/portfolio/creation-logo-massage-bien-etre-relax-wellness.webp" alt="Identité visuelle Relax Massage &amp; Wellness : logo lotus turquoise, cartes de visite, étiquettes et serviettes" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Relax</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, papeterie et supports bien-être</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <p>L’objectif était de créer une identité visuelle évoquant immédiatement le bien-être, la détente et l’harmonie.</p>
+                    <p>Le symbole associe subtilement la lettre R, initiale de Relax, à une fleur de lotus — symbole de sérénité, d’équilibre et d’épanouissement. Cette fusion donne un signe à la fois identifiable, élégant et directement lié à l’univers du bien-être.</p>
+                    <p>La palette de bleu-vert profond et de turquoise renforce cette sensation de calme tout en apportant une dimension contemporaine et premium à l’identité.</p>
+                    <p>L’ensemble a ensuite été décliné sur différents supports afin de construire une image de marque cohérente, apaisante et facilement reconnaissable.</p>
+                  </div>
+                </div>
+              </article>
+              <article data-piece="violet" data-sujet="Restauration" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>15</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  <img data-piecemedia="1" src="/assets/portfolio/creation-logo-packaging-bretzel-restauration-bretzelle.webp" alt="Identité visuelle Bretzelle : logo bretzel doré, sacs kraft, sachets et affiche pour un concept de restauration" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
-                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Ô Bohneur D'Emy</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, étiquettes et textile</p>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Bretzelle</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et supports</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Bretzelle est un concept de restauration centré autour du bretzel, avec une identité pensée pour être immédiatement reconnaissable et donner au produit une véritable personnalité.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le logo repose sur un symbole qui fusionne directement la forme du bretzel avec la lettre « B », créant un signe à la fois figuratif et typographique. Les détails du bretzel, comme les petits points qui évoquent le sel, renforcent la lecture du symbole et son lien avec le produit.</p>
+                    <p>La typographie manuscrite apporte un aspect plus chaleureux et spontané, tandis que l’association du jaune et du brun rappelle les couleurs du bretzel fraîchement cuit. L’ensemble construit une identité gourmande, facilement identifiable et adaptée à l’univers de la restauration.</p>
+                    <h4>Déclinaisons</h4>
+                    <p>L’identité a été pensée pour différents supports liés à la marque, notamment les sacs en papier et les emballages, en permettant au logo de rester très visible et reconnaissable sur différents formats.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Identité visuelle · Illustration · Supports de communication</p>
+                  </div>
                 </div>
               </article>
-              <article data-piece="pink" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>10</span>
+              <article data-piece="pink" data-sujet="Restaurant de livraison" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>16</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/creation-logo-packaging-fish-and-chips-mr-fish.webp" alt="Création de logo Mr. Fish : packaging fish and chips à emporter, sachet et gobelet" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
@@ -2994,19 +3567,45 @@ export default class PixoveryPage extends React.Component {
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Mr. Fish</h3>
                   <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et packaging à emporter</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Mr. Fish était un ancien concept de restauration spécialisé dans le fish and chips, développé pour la livraison dans le cadre de Bring Eat. L’identité devait donner au nom une personnalité forte tout en faisant immédiatement référence à l’univers du poisson.</p>
+                    <h4>Concept du logo</h4>
+                    <p>Le logo associe une typographie manuscrite et expressive à un symbole placé à ses côtés. Celui-ci fusionne la silhouette d’un poisson avec un haut-de-forme, créant ainsi une représentation visuelle directe du nom « Mr. Fish » : le poisson évoque Fish, tandis que le chapeau apporte le côté Mr.</p>
+                    <p>Cette association donne au logo un caractère à la fois original et facilement mémorisable, tout en établissant un lien immédiat avec l’activité de restauration. Le jaune et le noir renforcent son impact visuel et permettent au logo de fonctionner efficacement sur différents supports.</p>
+                    <h4>Déclinaisons</h4>
+                    <p>Le logo a été appliqué sur différents supports liés à la livraison, notamment les boîtes, sacs, gobelets et contenants, afin de conserver une identité cohérente à travers les différents éléments de la marque.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Logo · Identité visuelle · Supports de communication · Packaging</p>
+                  </div>
                 </div>
               </article>
-              <article data-piece="violet" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>11</span>
+              <article data-piece="violet" data-sujet="Bar L’Autruche, Toulouse" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>17</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
-                  <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-restaurant-chinois-jung-fu.webp" alt="Identité visuelle Jung Fu : logo, enseigne et packaging pour un restaurant chinois" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <img data-piecemedia="1" src="/assets/portfolio/affiche-soiree-oldschool-tropical-mix-another-world.webp" alt="Affiche de soirée Oldschool Tropical Mix : collage tropical, toucan et flamants roses sur abribus, soirée reggae et calypso à Toulouse" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
-                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Jung Fu</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et packaging restaurant</p>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Affiche événementielle</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Oldschool Tropical Mix</h3>
+                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Affiche et supports réseaux</p>
+                  {/* Presentation lue par openLb : le plein ecran passe alors en
+                      fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
+                  <div data-piecetexte="1" hidden>
+                    <h4>Présentation</h4>
+                    <p>Oldschool Tropical Mix est une soirée événementielle organisée au bar L’Autruche à Toulouse, autour d’un univers musical mêlant reggae, calypso, soca et sonorités tropicales. L’affiche cherche à retranscrire cette ambiance chaleureuse et festive tout en s’éloignant des codes classiques de l’affiche de soirée.</p>
+                    <h4>Concept graphique</h4>
+                    <p>La création repose sur un photomontage mêlant un portrait en noir et blanc à une composition tropicale très colorée. Le personnage central est intégré à un décor composé de feuillages, de fleurs exotiques, de flamants roses et d’un toucan, créant un contraste entre la photographie monochrome et la richesse des éléments végétaux.</p>
+                    <p>La direction artistique s’inspire de l’imagerie tropicale et rétro, avec une palette de verts profonds, de jaunes et de couleurs vives. La typographie et les différents niveaux d’information sont organisés pour conserver une lecture claire tout en participant à l’esthétique générale de l’affiche.</p>
+                    <h4>Mise en situation</h4>
+                    <p>L’affiche a été présentée dans une mise en situation de mobilier urbain, afin de montrer son rendu dans un contexte réel d’affichage et de mettre en valeur son impact visuel à distance.</p>
+                    <h4>Prestations</h4>
+                    <p data-lbliste="1">Affiche événementielle · Photomontage · Direction artistique · Retouche photo · Composition graphique · Typographie</p>
+                  </div>
                 </div>
               </article>
             </div>
@@ -3016,97 +3615,47 @@ export default class PixoveryPage extends React.Component {
           </div>
         </section>
 
-        <div data-lightbox="1" aria-hidden="true" style={{position: "fixed", inset: "0", zIndex: "120", display: "flex", alignItems: "center", justifyContent: "center", padding: "calc(26*var(--u))", opacity: "0", visibility: "hidden", transition: "opacity .5s ease, visibility .5s ease"}}>
+        {/* COUPE AU NOIR DU MENU. Un lien de menu ne traverse plus la page :
+            l'ecran passe au noir en 260 ms, la page est POSEE d'un coup sur la
+            section, puis le noir se retire en 500 ms et la section apparait.
+            Traverser 6000 px en 1,15 s ne montrait rien de lisible, declenchait
+            au passage toutes les animations au scroll, et se battait avec le
+            recadrage de Services. z-index 130 : au-dessus de tout, header
+            compris — une coupe qui laisserait un element a l'ecran n'est plus
+            une coupe. */}
+        <div data-voile="1" aria-hidden="true" style={{position: "fixed", inset: "0", zIndex: "130", background: "#000", opacity: "0", pointerEvents: "none", transition: "opacity .26s ease"}}></div>
+        <div data-lightbox="1" data-lenis-prevent="1" aria-hidden="true" style={{position: "fixed", inset: "0", zIndex: "120", display: "flex", alignItems: "center", justifyContent: "center", padding: "calc(26*var(--u))", opacity: "0", visibility: "hidden", transition: "opacity .5s ease, visibility .5s ease"}}>
           <i aria-hidden="true" style={{position: "absolute", inset: "0", background: "rgba(5,2,10,.93)", backdropFilter: "blur(calc(12*var(--u)))"}}></i>
           <i aria-hidden="true" style={{position: "absolute", inset: "0", pointerEvents: "none", background: "radial-gradient(52% 52% at 50% 46%, rgba(143,43,255,.14) 0%, rgba(0,0,0,0) 72%)"}}></i>
           <button data-lbclose="1" aria-label="Fermer le visuel" style={{position: "absolute", top: "calc(26*var(--u))", right: "calc(30*var(--u))", width: "calc(46*var(--u))", height: "calc(46*var(--u))", borderRadius: "50%", border: "1px solid rgba(255,255,255,.22)", background: "rgba(0,0,0,.4)", color: "#fff", fontSize: "calc(15*var(--tu))", lineHeight: "1", zIndex: "3", cursor: "pointer", transition: "border-color .3s ease,background .3s ease"}} style-hover="border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.08)">&#10005;</button>
           <figure data-lbbox="1" style={{position: "relative", zIndex: "2", margin: "0", maxWidth: "min(1320px,94vw)", display: "flex", flexDirection: "column", alignItems: "center", gap: "calc(20*var(--u))", transform: "scale(.94) translateY(calc(16*var(--u)))", transition: "transform .65s cubic-bezier(.16,1,.3,1)"}}>
-            <img data-lbimg="1" alt="" style={{display: "block", maxWidth: "100%", maxHeight: "82vh", objectFit: "contain", borderRadius: "calc(4*var(--u))", cursor: "zoom-in"}} />
-            <figcaption style={{display: "flex", alignItems: "baseline", justifyContent: "center", gap: "calc(16*var(--u))", flexWrap: "wrap"}}>
+            {/* La scene tient l'image et, quand la piece porte une presentation,
+                le panneau de texte a sa droite. Sans texte elle ne contient que
+                l'image et se comporte comme avant. Le passage d'un mode a
+                l'autre se fait par [data-lbmode] sur le plein ecran : la mise
+                en page de la fiche est dans global.css, bloc « PLEIN ECRAN ». */}
+            <div data-lbstage="1">
+              <img data-lbimg="1" alt="" style={{display: "block", maxWidth: "100%", maxHeight: "82vh", objectFit: "contain", borderRadius: "calc(4*var(--u))", cursor: "zoom-in"}} />
+              <aside data-lbpanel="1">
+                <span data-lbmeta2="1"></span>
+                <h3 data-lbtitle2="1"></h3>
+                <i data-lbrule="1" aria-hidden="true"></i>
+                <div data-lbtexte="1"></div>
+              </aside>
+            </div>
+            <figcaption data-lbcap="1" style={{display: "flex", alignItems: "baseline", justifyContent: "center", gap: "calc(16*var(--u))", flexWrap: "wrap"}}>
               <span data-lbtitle="1" style={{fontWeight: "700", fontSize: "calc(21*var(--tu))", color: "#fff"}}></span>
               <span data-lbmeta="1" style={{fontSize: "calc(11*var(--tu))", letterSpacing: "calc(1.5*var(--u))", textTransform: "uppercase", color: "rgba(255,255,255,.45)"}}></span>
             </figcaption>
+
           </figure>
         </div>
 
 
-        {/* ---------------------------------------------------------------
-            TEMOIGNAGES — textes de REMPLACEMENT, noms inventes. A remplacer
-            par de vrais retours avant mise en ligne.
-
-            Chaque temoignage est mis en page comme l'ETIQUETTE PAPIER d'une
-            disquette 3,5" : un lisere de tete colore, le nom du client, la
-            discipline et sa reference, puis la zone d'ecriture. Services
-            montre les disquettes ; ici on lit ce qui est ecrit dessus. Le
-            vocabulaire vient donc du site lui-meme, il n'est pas importe.
-
-            Un seul indice de forme porte la reference : le COIN SUPERIEUR
-            DROIT COUPE (clip-path), la silhouette d'une 3,5". Pas de fausse
-            texture papier, pas d'ombre imitant du ruban adhesif : un seul
-            signe precis vaut mieux que trois approximatifs.
-
-            Le fond des cartes reprend EXACTEMENT le degrade des cadres du
-            portfolio (#1B1020 / #0B0B10 / #150F1C) : c'est deja le jeton
-            "surface" du site. Les liseres alternent violet / rose / violet,
-            comme les cartes du portfolio alternent data-piece.
-
-            Tout le style est dans global.css, bloc TEMOIGNAGES — il faut
-            :hover et clip-path, que le style inline ne sait pas porter.
-            Ici on ne garde que la structure et la parallaxe.
-            --------------------------------------------------------------- */}
-        <section id="temoignages" data-screen-label="Témoignages" style={{position: "relative", background: "#000", overflow: "hidden", padding: "calc(118*var(--u)) 0 calc(140*var(--u))", scrollMarginTop: "calc(76*var(--u))"}}>
-          <i aria-hidden="true" style={{position: "absolute", inset: "0", pointerEvents: "none", zIndex: "0", background: "radial-gradient(ellipse calc(560*var(--u)) calc(300*var(--u)) at 50% calc(50% + 30*var(--u)), rgba(143,43,255,.075) 0%, rgba(143,43,255,.026) 44%, rgba(0,0,0,0) 100%)"}}></i>
-          <div style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative", zIndex: "1"}}>
-            <header data-chapter="1" style={{display: "grid", gridTemplateColumns: "calc(52*var(--u)) 1fr", alignItems: "center", columnGap: "calc(20*var(--u))", padding: "0 calc(82*var(--u))", marginBottom: "calc(30*var(--u))"}}>
-              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>03</span>
-              <span data-rule="1" style={{height: "1px", background: "rgba(255,255,255,.16)", transform: "scaleX(0)", transformOrigin: "left", transition: "transform 1.2s cubic-bezier(.16,1,.3,1) .1s"}}></span>
-            </header>
-            <h2 data-reveal="1" style={{margin: "0 0 calc(54*var(--u))", padding: "0 calc(82*var(--u))", fontWeight: "800", fontSize: "calc(28*var(--tu))", lineHeight: "calc(33*var(--tu))", textTransform: "uppercase", letterSpacing: "calc(.5*var(--u))", color: "#fff"}}>Ce qu'ils en <em style={{fontStyle: "normal", color: "var(--violet-b)"}}>retiennent</em></h2>
-            <div data-temoins="1" style={{display: "flex", alignItems: "stretch", gap: "calc(40*var(--u))", padding: "0 calc(82*var(--u))"}}>
-              <div data-par="22" style={{flex: "1", minWidth: "0", marginTop: "calc(0*var(--u))", transform: "translateY(var(--ty,0px))", willChange: "transform", display: "flex"}}>
-                <article data-temoin="violet" data-reveal="1">
-                  <header data-temtete="1">
-                    <p data-temclient="1">Kabuki Sushi<span>IDV-01</span></p>
-                    <p data-temdisc="1">Identité visuelle</p>
-                  </header>
-                  <p data-temtxt="1">Il a commencé par nous demander pourquoi on avait ouvert, pas quelles couleurs on voulait. La mascotte est sortie de cette conversation-là.</p>
-                  <footer data-tempied="1">
-                    <b>Léa Marchand</b><span>Gérante</span>
-                  </footer>
-                </article>
-              </div>
-              <div data-par="40" style={{flex: "1", minWidth: "0", marginTop: "calc(24*var(--u))", transform: "translateY(var(--ty,0px))", willChange: "transform", display: "flex"}}>
-                <article data-temoin="pink" data-reveal="1">
-                  <header data-temtete="1">
-                    <p data-temclient="1">Ô Bohneur D'Emy<span>DA-04</span></p>
-                    <p data-temdisc="1">Direction artistique</p>
-                  </header>
-                  <p data-temtxt="1">J'avais peur que ça fasse trop. Il a enlevé la moitié de ce que je lui demandais, et il m'a expliqué pourquoi. Il avait raison.</p>
-                  <footer data-tempied="1">
-                    <b>Emy Doucet</b><span>Fondatrice</span>
-                  </footer>
-                </article>
-              </div>
-              <div data-par="58" style={{flex: "1", minWidth: "0", marginTop: "calc(48*var(--u))", transform: "translateY(var(--ty,0px))", willChange: "transform", display: "flex"}}>
-                <article data-temoin="violet" data-reveal="1">
-                  <header data-temtete="1">
-                    <p data-temclient="1">Top Bun<span>LOG-07</span></p>
-                    <p data-temdisc="1">Logo et packaging</p>
-                  </header>
-                  <p data-temtxt="1">On lui a envoyé trois références qui n'allaient pas ensemble. Il est revenu avec une piste qui ne ressemblait à aucune. C'est celle qu'on a gardée.</p>
-                  <footer data-tempied="1">
-                    <b>Yanis Berrada</b><span>Cofondateur</span>
-                  </footer>
-                </article>
-              </div>
-            </div>
-          </div>
-        </section>
-
         <section id="processus" data-screen-label="Processus" style={{position: "relative", background: "#000", padding: "calc(45*var(--u)) 0 calc(50*var(--u))", scrollMarginTop: "calc(76*var(--u))"}}>
           <div style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative"}}>
             <header data-chapter="1" style={{display: "grid", gridTemplateColumns: "calc(52*var(--u)) 1fr", alignItems: "center", columnGap: "calc(20*var(--u))", rowGap: "calc(22*var(--u))", padding: "0 calc(82*var(--u))"}}>
-              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>04</span>
+              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>03</span>
               <span data-rule="1" style={{height: "1px", background: "rgba(255,255,255,.16)", transform: "scaleX(0)", transformOrigin: "left", transition: "transform 1.2s cubic-bezier(.16,1,.3,1) .1s"}}></span>
               <h2 style={{margin: "0", gridColumn: "1 / -1", fontWeight: "800", fontSize: "calc(46*var(--tu))", lineHeight: "calc(45*var(--tu))", textTransform: "uppercase", color: "#fff", letterSpacing: "calc(-.4*var(--u))"}}>Mon <em style={{fontStyle: "normal", color: "var(--violet-b)"}}>processus</em></h2>
             </header>
@@ -3118,28 +3667,28 @@ export default class PixoveryPage extends React.Component {
                 <span data-stepnum="1" style={{width: "calc(76*var(--u))", height: "calc(76*var(--u))", borderRadius: "50%", border: "1px solid var(--pink)", background: "var(--dark)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "calc(24*var(--tu))", color: "#fff", transition: "background .5s ease,color .5s ease,transform .5s cubic-bezier(.16,1,.3,1)"}}>01</span>
                 <div style={{paddingTop: "calc(12*var(--u))", maxWidth: "calc(330*var(--u))"}}>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(24*var(--tu))", lineHeight: "1.1", color: "#fff"}}>Parlons de votre projet</h3>
-                  <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.45)"}}>Vous me présentez votre projet, vos idées et vos envies, même lorsqu’elles sont encore floues. Je vous pose les bonnes questions pour comprendre ce que vous voulez vraiment créer.</p>
+                  <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.88)"}}>Vous me présentez votre projet, vos idées et vos envies, même lorsqu’elles sont encore floues. Je vous pose les bonnes questions pour comprendre ce que vous voulez vraiment créer.</p>
                 </div>
               </li>
               <li data-step="1" style={{position: "relative", display: "grid", gridTemplateColumns: "calc(76*var(--u)) minmax(0,1fr)", columnGap: "calc(40*var(--u))", alignItems: "start", padding: "calc(30*var(--u)) 0"}}>
                 <span data-stepnum="1" style={{width: "calc(76*var(--u))", height: "calc(76*var(--u))", borderRadius: "50%", border: "1px solid var(--pink)", background: "var(--dark)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "calc(24*var(--tu))", color: "#fff", transition: "background .5s ease,color .5s ease,transform .5s cubic-bezier(.16,1,.3,1)"}}>02</span>
                 <div style={{paddingTop: "calc(12*var(--u))", maxWidth: "calc(330*var(--u))"}}>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(24*var(--tu))", lineHeight: "1.1", color: "#fff"}}>Direction créative</h3>
-                  <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.45)"}}>Je transforme vos idées en une direction visuelle claire. Références, intentions, pistes créatives : on construit ensemble un univers cohérent avant de passer à la création.</p>
+                  <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.88)"}}>Je transforme vos idées en une direction visuelle claire. Références, intentions, pistes créatives : on construit ensemble un univers cohérent avant de passer à la création.</p>
                 </div>
               </li>
               <li data-step="1" style={{position: "relative", display: "grid", gridTemplateColumns: "calc(76*var(--u)) minmax(0,1fr)", columnGap: "calc(40*var(--u))", alignItems: "start", padding: "calc(30*var(--u)) 0"}}>
                 <span data-stepnum="1" style={{width: "calc(76*var(--u))", height: "calc(76*var(--u))", borderRadius: "50%", border: "1px solid var(--pink)", background: "var(--dark)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "calc(24*var(--tu))", color: "#fff", transition: "background .5s ease,color .5s ease,transform .5s cubic-bezier(.16,1,.3,1)"}}>03</span>
                 <div style={{paddingTop: "calc(12*var(--u))", maxWidth: "calc(330*var(--u))"}}>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(24*var(--tu))", lineHeight: "1.1", color: "#fff"}}>Création</h3>
-                  <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.45)"}}>Je donne vie à la direction définie, puis j’ajuste chaque détail avec vos retours. Le projet évolue au fil des échanges jusqu’à trouver le bon équilibre entre idée et réalisation.</p>
+                  <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.88)"}}>Je donne vie à la direction définie, puis j’ajuste chaque détail avec vos retours. Le projet évolue au fil des échanges jusqu’à trouver le bon équilibre entre idée et réalisation.</p>
                 </div>
               </li>
               <li data-step="1" style={{position: "relative", display: "grid", gridTemplateColumns: "calc(76*var(--u)) minmax(0,1fr)", columnGap: "calc(40*var(--u))", alignItems: "start", padding: "calc(30*var(--u)) 0"}}>
                 <span data-stepnum="1" style={{width: "calc(76*var(--u))", height: "calc(76*var(--u))", borderRadius: "50%", border: "1px solid var(--pink)", background: "var(--dark)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "calc(24*var(--tu))", color: "#fff", transition: "background .5s ease,color .5s ease,transform .5s cubic-bezier(.16,1,.3,1)"}}>04</span>
                 <div style={{paddingTop: "calc(12*var(--u))", maxWidth: "calc(330*var(--u))"}}>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(24*var(--tu))", lineHeight: "1.1", color: "#fff"}}>Livraison</h3>
-                  <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.45)"}}>Je vous livre tous les éléments finalisés, déclinés dans les bons formats et prêts à être utilisés sur tous vos supports. Et si vos besoins évoluent, je reste disponible pour la suite.</p>
+                  <p style={{margin: "calc(12*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.88)"}}>Je vous livre tous les éléments finalisés, déclinés dans les bons formats et prêts à être utilisés sur tous vos supports. Et si vos besoins évoluent, je reste disponible pour la suite.</p>
                 </div>
               </li>
             </ol>
@@ -3152,7 +3701,7 @@ export default class PixoveryPage extends React.Component {
                   spin() refuse d'y demarrer, sinon les deux planches (1,3 Mo)
                   se telechargeraient sur telephone pour un element invisible. */}
               <div data-tour="1" style={{position: "sticky", top: "calc(50vh - 242*var(--u))", justifySelf: "end", width: "calc(338*var(--u))", height: "calc(484*var(--u))", willChange: "opacity, transform"}} aria-hidden="true">
-                <canvas data-spin="1" width="448" height="640" style={{position: "absolute", inset: "0", width: "100%", height: "100%"}}></canvas>
+                <canvas data-spin="1" width="352" height="503" style={{position: "absolute", inset: "0", width: "100%", height: "100%"}}></canvas>
               </div>
             </div>
           </div>
@@ -3161,18 +3710,18 @@ export default class PixoveryPage extends React.Component {
         <section id="apropos" data-screen-label="À propos" style={{position: "relative", overflow: "hidden", background: "#000", minHeight: "100vh", display: "flex", alignItems: "center", padding: "calc(40*var(--u)) 0 calc(32*var(--u))", scrollMarginTop: "0"}}>
           <div style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative"}}>
             <header data-chapter="1" style={{display: "grid", gridTemplateColumns: "calc(52*var(--u)) 1fr", alignItems: "center", columnGap: "calc(20*var(--u))", rowGap: "0", padding: "0 calc(82*var(--u))", marginBottom: "calc(30*var(--u))"}}>
-              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>05</span>
+              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>04</span>
               <span data-rule="1" style={{height: "1px", background: "rgba(255,255,255,.16)", transform: "scaleX(0)", transformOrigin: "left", transition: "transform 1.2s cubic-bezier(.16,1,.3,1) .1s"}}></span>
             </header>
             <div data-aboutrow="1" style={{display: "flex", alignItems: "flex-start", gap: "calc(20*var(--u))", paddingLeft: "calc(82*var(--u))", paddingRight: "calc(82*var(--u))"}}>
               <div data-par="-34" style={{flex: "1", minWidth: "0", transform: "translateY(var(--ty,0px))", willChange: "transform"}}>
                 <h2 data-reveal="1" style={{margin: "0", fontSize: "calc(28*var(--tu))", fontWeight: "800", lineHeight: "calc(33*var(--tu))", textTransform: "uppercase", letterSpacing: "calc(.5*var(--u))", color: "#fff"}}>Explorateur<br />d'idées à votre <em style={{fontStyle: "normal", color: "var(--violet-b)"}}>service</em></h2>
                 <div data-abouttext="1" style={{marginTop: "calc(30*var(--u))", width: "100%", textAlign: "justify", hyphens: "auto"}}>
-                  <p data-reveal="1" style={{margin: "0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(400*var(--u))"}}>J’aime trouver des idées là où on ne les attend pas. Je suis Redha Devarenne, graphiste freelance et illustrateur. Mon travail commence souvent par une question simple : comment rendre une idée plus intéressante, plus évidente ou complètement différente ?</p>
-                  <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(400*var(--u))"}}>Je cherche des concepts, j’imagine des univers, j’associe des images, des formes, des couleurs et des mots jusqu’à trouver ce petit déclic qui donne une direction au projet. J’aime expérimenter, faire des détours et mélanger les références.</p>
-                  <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(400*var(--u))"}}>Identité visuelle, logo, illustration, direction artistique ou création digitale : je ne me contente pas de mettre une idée en forme. Je cherche d’abord la bonne idée à mettre en forme, quitte à prendre un chemin qui n’était pas prévu.</p>
-                  <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(400*var(--u))"}}>Parce qu’une bonne idée n’arrive pas toujours en suivant la ligne droite. Mon objectif : créer des identités et des images qui ont quelque chose à dire, quelque chose à montrer et surtout, quelque chose à faire ressentir.</p>
-                  <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.48)", maxWidth: "calc(400*var(--u))"}}>Bienvenue dans mon univers.</p>
+                  <p data-reveal="1" style={{margin: "0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.88)", maxWidth: "calc(400*var(--u))"}}>J’aime trouver des idées là où on ne les attend pas. Je suis Redha Devarenne, graphiste freelance et illustrateur. Mon travail commence souvent par une question simple : comment rendre une idée plus intéressante, plus évidente ou complètement différente ?</p>
+                  <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.88)", maxWidth: "calc(400*var(--u))"}}>Je cherche des concepts, j’imagine des univers, j’associe des images, des formes, des couleurs et des mots jusqu’à trouver ce petit déclic qui donne une direction au projet. J’aime expérimenter, faire des détours et mélanger les références.</p>
+                  <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.88)", maxWidth: "calc(400*var(--u))"}}>Identité visuelle, logo, illustration, direction artistique ou création digitale : je ne me contente pas de mettre une idée en forme. Je cherche d’abord la bonne idée à mettre en forme, quitte à prendre un chemin qui n’était pas prévu.</p>
+                  <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.88)", maxWidth: "calc(400*var(--u))"}}>Parce qu’une bonne idée n’arrive pas toujours en suivant la ligne droite. Mon objectif : créer des identités et des images qui ont quelque chose à dire, quelque chose à montrer et surtout, quelque chose à faire ressentir.</p>
+                  <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13.5*var(--tu))", lineHeight: "calc(23*var(--tu))", color: "rgba(255,255,255,.88)", maxWidth: "calc(400*var(--u))"}}>Bienvenue dans mon univers.</p>
                 </div>
                 <img data-signature="1" src="/assets/img08.webp" alt="Signature Pixovery" style={{marginTop: "calc(14*var(--u))", width: "calc(176*var(--u))", height: "auto", mixBlendMode: "screen"}} width="620" height="237" decoding="async" loading="lazy" />
               </div>
@@ -3187,7 +3736,7 @@ export default class PixoveryPage extends React.Component {
         <section id="contact" data-screen-label="Contact" style={{position: "relative", background: "#000", padding: "calc(45*var(--u)) 0 calc(50*var(--u))", scrollMarginTop: "calc(76*var(--u))"}}>
           <div style={{width: "calc(1024*var(--u))", margin: "0 auto", position: "relative", marginBottom: "calc(30*var(--u))"}}>
             <header data-chapter="1" style={{display: "grid", gridTemplateColumns: "calc(52*var(--u)) 1fr", alignItems: "center", columnGap: "calc(20*var(--u))", padding: "0 calc(82*var(--u))"}}>
-              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>06</span>
+              <span style={{fontSize: "calc(11*var(--tu))", fontWeight: "600", letterSpacing: "calc(2.6*var(--u))", color: "var(--pink-b)"}}>05</span>
               <span data-rule="1" style={{height: "1px", background: "rgba(255,255,255,.16)", transform: "scaleX(0)", transformOrigin: "left", transition: "transform 1.2s cubic-bezier(.16,1,.3,1) .1s"}}></span>
             </header>
           </div>
@@ -3224,7 +3773,7 @@ export default class PixoveryPage extends React.Component {
             </div>
             <div data-par="-28" style={{flex: "1", minWidth: "0", maxWidth: "calc(400*var(--u))", transform: "translateY(var(--ty,0px))", willChange: "transform"}}>
               <h2 data-reveal="1" style={{margin: "0", fontWeight: "700", fontSize: "calc(40*var(--tu))", lineHeight: "calc(40*var(--tu))", textTransform: "uppercase", color: "#fff", letterSpacing: "calc(-.4*var(--u))"}}>Discutons de<br /><em style={{fontStyle: "normal", color: "var(--violet-b)"}}>votre projet</em></h2>
-              <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13*var(--tu))", lineHeight: "calc(19.5*var(--tu))", color: "#A2A4A9"}}>Vous avez un projet, une envie ou simplement une idée qui mérite d’être explorée ? On peut commencer par en parler, sans brief compliqué ni grand discours. Le reste viendra ensuite.</p>
+              <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13*var(--tu))", lineHeight: "calc(19.5*var(--tu))", color: "rgba(255,255,255,.88)"}}>Vous avez un projet, une envie ou simplement une idée qui mérite d’être explorée ? On peut commencer par en parler, sans brief compliqué ni grand discours. Le reste viendra ensuite.</p>
               <form data-form="1" noValidate={true} onSubmit={this.handleSubmit} style={{marginTop: "calc(22*var(--u))", display: "flex", flexDirection: "column", gap: "calc(14*var(--u))"}}>
                 <div data-reveal="1" style={{display: "flex", gap: "calc(18*var(--u))"}}>
                   <input type="text" name="nom" placeholder="Nom" autoComplete="family-name" style={{flex: "1", minWidth: "0", width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
@@ -3247,9 +3796,9 @@ export default class PixoveryPage extends React.Component {
           <div style={{width: "calc(1024*var(--u))", maxWidth: "100%", margin: "0 auto", boxSizing: "border-box", padding: "calc(30*var(--u)) calc(82*var(--u))", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "calc(12*var(--u)) calc(32*var(--u))"}}>
             <p style={{margin: "0", fontSize: "max(calc(11*var(--tu)),9px)", lineHeight: "calc(18*var(--tu))", letterSpacing: "calc(.2*var(--u))", color: "#6A6C71"}}>© 2026 Pixovery — Tous droits réservés.</p>
             <p data-legal="1" style={{margin: "0", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "calc(4*var(--u)) calc(12*var(--u))", fontSize: "max(calc(11*var(--tu)),9px)", lineHeight: "calc(18*var(--tu))", letterSpacing: "calc(.2*var(--u))"}}>
-              <a>Mentions légales</a>
+              <a href="/mentions-legales.html">Mentions légales</a>
               <span aria-hidden="true" style={{color: "rgba(255,255,255,.20)"}}>·</span>
-              <a>Politique de confidentialité</a>
+              <a href="/confidentialite.html">Politique de confidentialité</a>
             </p>
           </div>
         </footer>

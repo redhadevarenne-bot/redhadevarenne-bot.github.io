@@ -1457,3 +1457,125 @@ footer, footer a, small{
 [data-cue] span{color:#FF2C86 !important}
 [data-cue] rect{stroke:#FF2C86 !important;stroke-width:1.6}
 [data-cue] circle{fill:#FF2C86 !important}
+
+
+/* ==========================================================================
+   PLEIN ECRAN — FICHE PROJET
+   --------------------------------------------------------------------------
+   Le plein ecran du portfolio a deux mises en page, choisies par openLb qui
+   pose [data-lbmode] sur [data-lightbox] :
+
+   - « simple »  : l'image seule, sa legende centree dessous. Comportement
+                   d'origine, garde le 1:1 defilable au clic sur l'image.
+   - « fiche »   : image a gauche, presentation a droite. Reservee aux pieces
+                   qui portent un <div data-piecetexte> dans leur article.
+
+   Tout est ici et non en style en ligne : c'est la seule facon d'avoir une
+   requete media (le passage en colonne sous 900 px).
+
+   La hauteur de la scene est donnee par l'IMAGE (aspect-ratio 1/1), pas par
+   le texte : deux fiches de longueurs differentes ouvrent le meme cadre. Le
+   panneau defile a l'interieur si le texte deborde.
+   ========================================================================== */
+[data-lbstage]{display:flex;justify-content:center;width:100%}
+[data-lbpanel]{display:none}
+
+[data-lbmode="fiche"] [data-lbbox]{max-width:min(1460px,96vw) !important;width:100%}
+[data-lbmode="fiche"] [data-lbcap]{display:none !important}
+[data-lbmode="fiche"] [data-lbstage]{
+  align-items:stretch;
+  max-height:84vh;
+  border-radius:calc(6*var(--u));
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.09);
+  /* meme degrade que les cadres du ruban : la fiche est la meme matiere, en
+     grand. Un fond uni ferait apparaitre une boite rapportee. */
+  background:linear-gradient(150deg,#150E1E 0%,#0A0910 55%,#120C1A 100%);
+  box-shadow:0 calc(34*var(--u)) calc(90*var(--u)) rgba(0,0,0,.55);
+}
+[data-lbmode="fiche"] [data-lbimg]{
+  flex:0 0 58%;width:58%;
+  aspect-ratio:1/1;height:auto;
+  max-width:none !important;max-height:84vh !important;
+  /* Le mockup n'est JAMAIS rogne : il est livre carre, cadre au millimetre,
+     et couper 40 px de marge se voit tout de suite. `contain` peut laisser
+     deux bandes quand la hauteur d'ecran contraint la colonne — elles sont du
+     meme noir que le fond, donc invisibles. */
+  object-fit:contain !important;
+  border-radius:0 !important;
+  background:#08070C;
+}
+[data-lbmode="fiche"] [data-lbpanel]{
+  flex:1 1 42%;min-width:0;
+  display:flex;flex-direction:column;
+  /* `safe` : sans lui, un texte plus haut que le panneau est centre puis
+     rogne EN HAUT, et le debut devient inatteignable au defilement. */
+  justify-content:center;justify-content:safe center;
+  padding:calc(48*var(--u)) calc(46*var(--u));
+  overflow-y:auto;
+}
+
+[data-lbpanel] [data-lbmeta2]{
+  font-size:calc(10*var(--tu));
+  letter-spacing:calc(2*var(--u));
+  text-transform:uppercase;
+  color:var(--violet-b);
+}
+[data-lbton="pink"] [data-lbmeta2]{color:var(--pink-b)}
+[data-lbpanel] [data-lbtitle2]{
+  /* meme fonte que les titres de section : la fiche appartient a la page */
+  font-family:'Newake','Neue Haas Display',sans-serif;
+  font-weight:400;
+  font-size:calc(44*var(--tu));
+  line-height:1.02;
+  letter-spacing:calc(1.2*var(--u));
+  color:#fff;
+  margin:calc(12*var(--u)) 0 0;
+  /* Newake pose ses accents au ras de la boite de ligne : meme correction
+     que sur le h1 du hero. */
+  padding-top:.14em;margin-top:calc(12*var(--u) - .14em);
+}
+[data-lbpanel] [data-lbrule]{
+  display:block;width:calc(46*var(--u));height:2px;
+  /* #E2006B ne tient pas en trait fin sur du noir : il vire au brun. Le rose
+     clair du site, lui, se lit comme une lumiere. */
+  background:#FF2C86;
+  margin:calc(22*var(--u)) 0 calc(24*var(--u));
+}
+[data-lbtexte] p{
+  margin:0 0 calc(15*var(--u));
+  font-size:calc(14*var(--tu));
+  line-height:1.8;
+  color:#fff;
+  /* la mesure : au-dela de ~68 signes l'oeil perd la ligne suivante */
+  max-width:calc(600*var(--u));
+}
+[data-lbtexte] p:last-child{margin-bottom:0}
+
+@media (max-width:900px){
+  [data-lbmode="fiche"] [data-lbstage]{flex-direction:column;max-height:86vh;overflow-y:auto}
+  [data-lbmode="fiche"] [data-lbimg]{flex:0 0 auto;width:100%;max-height:none !important}
+  [data-lbmode="fiche"] [data-lbpanel]{flex:0 0 auto;overflow:visible;padding:calc(32*var(--u)) calc(28*var(--u)) calc(38*var(--u))}
+  [data-lbpanel] [data-lbtitle2]{font-size:calc(30*var(--tu))}
+}
+
+/* Rubriques d'une fiche longue (Presentation, Concept, Declinaisons...).
+   Gris discret et non blanc : ce sont des reperes de lecture, ils ne doivent
+   pas rivaliser avec le titre du projet ni avec le corps du texte. */
+[data-lbtexte] h4{
+  margin:calc(26*var(--u)) 0 calc(10*var(--u));
+  font-size:calc(10.5*var(--tu));
+  font-weight:600;
+  letter-spacing:calc(2*var(--u));
+  text-transform:uppercase;
+  color:rgba(255,255,255,.42);
+}
+[data-lbtexte] h4:first-child{margin-top:0}
+/* La ligne des prestations : c'est une mention, pas une phrase. Le creme lui
+   va — c'est exactement l'emploi que le site lui reserve. */
+[data-lbtexte] [data-lbliste]{
+  color:var(--creme);
+  font-size:calc(12.5*var(--tu));
+  line-height:1.6;
+  letter-spacing:calc(.3*var(--u));
+}
