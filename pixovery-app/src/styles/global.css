@@ -1674,7 +1674,7 @@ footer, footer a, small{
   /* --- 8. LE PERSONNAGE D'« A PROPOS » ------------------------------------
      510*--u = 194 px. Comme partout ailleurs sur cette page, une largeur
      ecrite en unites maquette s'effondre des qu'on quitte le grand ecran. */
-  [data-aboutphoto]{width:min(82vw, 400px) !important}
+  [data-aboutphoto]{width:min(92vw, 460px) !important}
 
   /* --- 9. LA BARRE « 05 » DE CONTACT PASSAIT DERRIERE LE PERSONNAGE -------
      Deux causes cumulees. D'abord l'ecart : l'entete et la rangee sont
@@ -1685,6 +1685,30 @@ footer, footer a, small{
      recouvrement visible. On separe, et on donne la priorite a l'entete. */
   #contact [data-chapter]{position:relative !important; z-index:2 !important}
   #contact [data-contactrow]{margin-top:24px !important; z-index:1}
+
+  /* --- 9 bis. LE VRAI COUPABLE : LE BLOC NOIR ---------------------------
+     Le z-index seul ne pouvait pas suffire, parce que le probleme n'est pas
+     l'ordre d'empilement mais le fait qu'il y ait quelque chose de noir a
+     empiler. img10.webp est une photo sur FOND NOIR, rendue transparente par
+     `mix-blend-mode: screen` — screen(0, x) = x, le noir disparait.
+     Sauf que mix-blend-mode ne melange pas avec la page : il melange avec le
+     fond de son CONTEXTE D'EMPILEMENT. Or [data-contactphoto] en cree un,
+     deux fois plutot qu'une — `transform: translateY(var(--ty))` et
+     `will-change: transform`. Le contexte est vide, donc le noir de la photo
+     se melange a du vide et reste noir. Sur desktop la section est noire et
+     personne ne le voit ; en telescopant la barre 05, ca devient un cache.
+     On retire donc les deux causes du contexte. La parallaxe (data-par=72)
+     saute avec — c'est elle qui faisait DERIVER le visuel jusque sur la
+     barre, et sur telephone une parallaxe de 72 px sur une colonne unique
+     n'apporte rien.
+
+     REGLE A LA SOURCE LE MEME JOUR, et c'est la bonne facon : le visuel est
+     passe sur img10-cut.webp, qui porte une VRAIE couche alpha. Plus de
+     mix-blend-mode, donc plus de contexte d'empilement a menager, et le bloc
+     noir n'existe plus — ni ici ni sur desktop. La rustine CSS qui coupait la
+     parallaxe a donc ete retiree : elle redevient la meme que partout
+     ailleurs. Il ne reste que l'ecart et l'ordre d'empilement ci-dessus, qui
+     gardent la barre 05 lisible. */
 
   /* --- 10. LE PERSONNAGE DU PROCESSUS REVIENT SUR TELEPHONE ---------------
      Il etait masque ici, et spin() sortait avant de creer les Image() pour ne

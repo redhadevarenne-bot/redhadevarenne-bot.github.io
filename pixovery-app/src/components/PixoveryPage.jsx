@@ -23,6 +23,73 @@ import Lenis from 'lenis'
    definitivement validee.
    ========================================================================== */
 
+/* =============================================================================
+   BANC DE DIAGNOSTIC — ?light=...
+
+   Sert a TROUVER ce qui saccade sur telephone, pas a corriger quoi que ce
+   soit. Rien n'est actif sans le parametre : en usage normal ALLEGE()
+   renvoie toujours false et le site est strictement identique.
+
+   On teste sur le VRAI telephone, meme page, meme reseau, en changeant
+   seulement l'URL :
+
+     ?motion=full                -> reference, tout est branche
+     ?motion=full&light=hero     -> les deux planches du hero ne sont JAMAIS
+                                    chargees (ni telechargees, ni decodees).
+                                    La figurine reste vide : c'est voulu.
+                                    Gain vise : ~108 Mo de bitmaps residents.
+     ?motion=full&light=svc      -> la parallaxe des disquettes ne calcule
+                                    plus rien par frame dans Services.
+     ?motion=full&light=1        -> les deux a la fois.
+
+   Lecture du resultat :
+     - light=hero fluide, le reste non   -> c'est la MEMOIRE des planches.
+     - light=svc fluide                  -> c'est la parallaxe 3D, pas la memoire.
+     - light=1 saccade encore            -> la cause est ailleurs (a chercher
+                                            du cote des animations CSS en
+                                            boucle et des couches composees).
+
+   Ce bloc est jetable : une fois la cause connue, on le retire.
+   ========================================================================== */
+const ALLEGE = (() => {
+  const m = typeof window !== 'undefined'
+    && /[?&]light=([a-z0-9,]+)/i.exec(window.location.search);
+  const v = m ? m[1].toLowerCase().split(',') : [];
+  return k => v.indexOf('1') >= 0 || v.indexOf(k) >= 0;
+})();
+
+/* =============================================================================
+   MODE LEGER — telephone
+
+   POURQUOI. Les deux planches du hero font 3320 x 4096. Decodees, elles
+   occupent 54 Mo CHACUNE, soit ~108 Mo residents pour toute la duree de la
+   visite. Sur un telephone milieu de gamme c'est au-dela du budget memoire de
+   l'onglet : le navigateur jette des bitmaps puis les redecode, et ces
+   redecodages tombent en plein defilement. Ca ne saccade donc pas seulement
+   dans le hero — ca saccade PARTOUT, tant que la page vit.
+
+   CE QU'ON COUPE. La planche FILAIRE seulement (`perso-filaire-v2.webp`).
+   Elle ne sert qu'au balayage magenta pendant la rotation. On ne la charge
+   pas du tout : ni telechargement (1,5 Mo de moins), ni decodage (54 Mo de
+   moins), et `repeins()` — un getImageData + une boucle JS sur ~1,7 million
+   d'octets a chaque changement d'image — ne tourne plus jamais.
+
+   CE QU'ON GARDE. La planche PLEINE, en pleine definition : la figurine
+   tourne exactement comme avant. Et `filaire-repos.webp` (124 Ko, fichier a
+   part) reste charge : le filaire de la POSE DE REPOS — celui qu'on voit a
+   l'arrivee sur le site, immobile, donc le plus regarde — est intact et en
+   pleine definition. Il s'efface en fondu quand la rotation demarre, aux
+   images 17 a 20, exactement comme il le faisait deja.
+
+   CE QU'ON PERD. Le filaire magenta pendant la rotation elle-meme, sur
+   telephone uniquement. Sur ordinateur rien ne change.
+
+   Le seuil est 768 px, le MEME que `tactile` dans services(). Si tu changes
+   l'un, change l'autre.
+   ========================================================================== */
+const LEGER = typeof window !== 'undefined' && !!(window.matchMedia
+  && window.matchMedia('(max-width:768px)').matches);
+
 export default class PixoveryPage extends React.Component {
   constructor(props){
     super(props);
@@ -751,7 +818,10 @@ export default class PixoveryPage extends React.Component {
            passerait. Valeurs bornees, sinon les panneaux lointains
            partent trop loin. */
         const prof = el.querySelector('[data-floppydepth]');
-        if(prof){
+        /* ?light=svc : on saute tout le calcul de parallaxe des disquettes
+           (transformations 3D ecrites a chaque frame de defilement). Les
+           disquettes restent visibles, simplement immobiles. */
+        if(prof && !ALLEGE('svc')){
           const pk = Math.max(-1.5, Math.min(1.5, p * (n - 1) - k));
           const abs = Math.min(Math.abs(pk), 1);
           let px = pk * 17, py = abs * -3.4, ps = 1 - abs * 0.20;
@@ -2780,10 +2850,17 @@ export default class PixoveryPage extends React.Component {
       vue = i;
       const sx = (i % COLS) * TW, sy = ((i / COLS) | 0) * TH;
       if(cxP && pretP) dessinePlein(sx, sy);
-      if(cxF && pretF){
+      /* `pretR` suffit desormais a entrer ici : en mode LEGER la planche
+         filaire n'est jamais chargee (pretF reste false) mais la pose de
+         repos, elle, doit continuer a s'afficher puis a s'effacer. */
+      if(cxF && (pretF || pretR)){
         cxF.clearRect(0, 0, CW, CW);
         const w = pretR ? cl((REPOS_FIN + REPOS_FONDU - i) / REPOS_FONDU, 0, 1) : 0;
-        if(w < 1){
+        /* `&& pretF` : sans planche filaire, cette branche est simplement
+           sautee. Le filaire de repos s'efface donc en fondu aux images 17
+           a 20 et plus rien ne le remplace — la rotation se joue en plein
+           seul. C'est la degradation voulue, pas un manque. */
+        if(w < 1 && pretF){
           cxF.globalAlpha = 1 - w;
           cxF.drawImage(repeins(sx, sy), 0, 0, RW, RH, DX, DY, DW, DH);
         }
@@ -2865,12 +2942,29 @@ export default class PixoveryPage extends React.Component {
        requete vers la page courante). Si createImageBitmap manque ou
        echoue, on garde les <img> : degrade, pas casse. */
     const enBitmap = () => {
-      if(bmP || !pretP || !pretF || !window.createImageBitmap) return;
+      /* En mode LEGER on n'attend PAS pretF : la planche filaire ne viendra
+         jamais. Sans cette exception on resterait bloque ici, bmP ne serait
+         jamais cree, et la planche pleine resterait une <img> que le
+         navigateur est libre de redecoder en plein defilement — precisement
+         la saccade que createImageBitmap etait la pour supprimer. */
+      if(bmP || !pretP || (!pretF && !LEGER) || !window.createImageBitmap) return;
+      const VIDE = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+      if(LEGER){
+        createImageBitmap(plein)
+          .then(a => {
+            bmP = a;
+            plein.onload = null;
+            plein.src = VIDE;
+            vue = -1; dessine(derniere);
+          })
+          .catch(() => {});
+        return;
+      }
       Promise.all([createImageBitmap(plein), createImageBitmap(fil)])
         .then(([a, b]) => {
           bmP = a; bmF = b;
           plein.onload = fil.onload = null;
-          plein.src = fil.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+          plein.src = fil.src = VIDE;
           vue = -1; dessine(derniere);
         })
         .catch(() => {});
@@ -2882,9 +2976,17 @@ export default class PixoveryPage extends React.Component {
        c'est exactement le decalage qu'on voyait. Un nom neuf coupe court a
        tout cache navigateur qui trainerait. */
     repos.onload = () => { preparerRepos(); vue = -1; dessine(derniere); };
-    plein.src = '/assets/perso-tour-v2.webp';
-    fil.src   = '/assets/perso-filaire-v2.webp';
-    repos.src = '/assets/filaire-repos.webp';
+    /* ?light=hero : on ne pose meme pas les src. Sans chargement, pretP et
+       pretF restent false, dessine() sort tout de suite et enBitmap() ne
+       decode rien. Aucun autre chemin de code ne change. */
+    if(!ALLEGE('hero')){
+      plein.src = '/assets/perso-tour-v2.webp';
+      /* LEGER : la ligne suivante est LA correction. Ne pas poser ce src,
+         c'est economiser 1,5 Mo de telechargement, 54 Mo de memoire, et
+         toutes les executions de repeins(). */
+      if(!LEGER) fil.src = '/assets/perso-filaire-v2.webp';
+      repos.src = '/assets/filaire-repos.webp';
+    }
 
     const sparks = hv.querySelector('[data-scansparks]');
     if(sparks && !sparks.childElementCount){
@@ -3840,7 +3942,31 @@ export default class PixoveryPage extends React.Component {
                   nuage violet sans forme. Resserree sous la machine, et affaiblie. */}
               <i aria-hidden="true" style={{position: "absolute", left: "6%", right: "6%", top: "76%", height: "30%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(50% 46% at 50% 34%, rgba(158,74,255,.30) 0%, rgba(126,10,255,.14) 38%, rgba(122,1,255,.05) 62%, rgba(0,0,0,0) 82%)", filter: "blur(calc(22*var(--u)))"}}></i>
               <i aria-hidden="true" style={{position: "absolute", left: "22%", right: "22%", top: "84%", height: "7%", pointerEvents: "none", zIndex: "0", background: "radial-gradient(50% 50% at 50% 50%, rgba(255,45,190,.20) 0%, rgba(226,0,107,.07) 46%, rgba(0,0,0,0) 78%)", filter: "blur(calc(14*var(--u)))"}}></i>
-              <img src="/assets/img10.webp" alt="Pixovery — contact" style={{position: "relative", zIndex: "1", width: "100%", height: "auto", mixBlendMode: "screen", WebkitMaskImage: "linear-gradient(to bottom,#000 0%,#000 89%,rgba(0,0,0,.55) 93%,rgba(0,0,0,.14) 96%,rgba(0,0,0,0) 98%)", maskImage: "linear-gradient(to bottom,#000 0%,#000 89%,rgba(0,0,0,.55) 93%,rgba(0,0,0,.14) 96%,rgba(0,0,0,0) 98%)"}} width="1000" height="1023" decoding="async" loading="lazy" />
+              {/* VRAI DETOURAGE, 26/08. img10.webp etait une photo sur fond
+                  noir rendue transparente par mix-blend-mode:screen. Ca marche
+                  tant que ce qui est DERRIERE est noir — or un blend ne se
+                  melange pas avec la page mais avec le fond de son contexte
+                  d'empilement, et ce conteneur en cree un (transform +
+                  will-change). Le fond du contexte est vide, donc le noir de
+                  la photo restait noir : un bloc opaque, invisible sur la
+                  section noire, mais qui masquait la barre « 05 » des qu'il
+                  passait dessus sur telephone.
+                  img10-cut.webp porte une VRAIE couche alpha (masque du sujet,
+                  trous interieurs rebouches pour que l'ecran et les ombres du
+                  clavier restent opaques, frange d'1 px modulee par la
+                  luminance). Plus de blend, donc plus de contexte a menager :
+                  le visuel se pose sur n'importe quel fond.
+                  92 Ko au lieu de 61 — l'alpha se paie, c'est le prix du
+                  detourage. Garder l'original a cote : il sert de source si le
+                  masque doit etre refait. */}
+              {/* LE MASQUE DEGRADE DU BAS A SAUTE, et il le fallait. Il
+                  commencait a 89 % de la hauteur pour estomper le reflet du
+                  plateau — un reflet magenta, etale et sale, que le detourage
+                  a retire pour de bon. Le sujet descend maintenant jusqu'a
+                  95 % : garder le masque aurait fait disparaitre le bas du
+                  clavier et la souris, pas un reflet. Si tu remets un reflet
+                  dans l'image un jour, remets le masque avec. */}
+              <img src="/assets/img10-cut.webp" alt="Pixovery — contact" style={{position: "relative", zIndex: "1", width: "100%", height: "auto"}} width="1000" height="1023" decoding="async" loading="lazy" />
               <div aria-hidden="true" style={{position: "absolute", left: "28.5%", top: "44.9%", width: "28.8%", height: "17.1%", overflow: "hidden", display: "flex", alignItems: "center", pointerEvents: "none", zIndex: "3", transformOrigin: "50% 50%", transform: "rotate(3.2deg)", animation: "crt-flicker 3.4s steps(1) infinite"}}>
                 <div style={{display: "flex", flex: "none", animation: "crt-scroll 5.5s linear infinite", willChange: "transform"}}>
                   <span style={{fontFamily: "'VT323',monospace", fontSize: "calc(59*var(--tu))", lineHeight: "1", letterSpacing: "calc(-0.5*var(--u))", color: "#3A0233", paddingRight: "calc(26*var(--u))", whiteSpace: "nowrap", wordSpacing: "calc(-6*var(--u))"}}>SO CALL ME MAYBE</span>
