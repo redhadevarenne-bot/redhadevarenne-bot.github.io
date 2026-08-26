@@ -1588,3 +1588,118 @@ footer, footer a, small{
   }
   [data-galtrack] [data-piecenum]{display:none !important}
 }
+
+/* ==========================================================================
+   RESPONSIVE — passe du 26/08/2026
+   Cinq points releves par Redha, TELEPHONE UNIQUEMENT. Ce bloc est en fin de
+   fichier a dessein : meme specificite que les blocs mobiles plus haut, il
+   gagne par l'ordre de la cascade. Rien ici ne touche au desktop.
+   ========================================================================== */
+@media (max-width:768px){
+
+  /* --- 1. LA SEQUENCE DU HERO SEMBLAIT N'AVOIR QUE 3 OU 4 IMAGES ----------
+     Ce n'etait pas un probleme de rendu mais de COURSE. La rotation compte
+     76 poses, lues sur la fraction TOUR0->FIN de la piste (0,06 a 0,62, soit
+     56 % de la course). Avec --piste-hero a 150vh, la course vaut 50vh :
+     environ 420 px sur un ecran de 844, dont 236 px seulement pour les 76
+     poses — 3 px par image. Un seul glissement du pouce (300 px) traversait
+     donc la rotation entiere en une fraction de seconde : on ne pouvait en
+     percevoir que quelques images.
+     Sur desktop la meme rotation dispose de ~1500 px, soit 20 px par image.
+     On rapproche le telephone de ce reglage. 260vh donne ~16 px par image.
+     C'EST LE SEUL BOUTON A TOURNER si c'est encore trop rapide (monter) ou
+     si le hero devient trop long a passer (descendre) : scanHero() et
+     heroScroll() lisent tous les deux piste.offsetHeight - innerHeight,
+     toute la choregraphie se recale d'elle-meme. */
+  :root{--piste-hero:260vh}
+
+  /* --- 2. LE TITRE « MES SERVICES » ETAIT COUPE -------------------------
+     [data-svctete] est cale a 84*--u du haut du cadre collant, soit 32 px a
+     390 px de large — donc SOUS la barre de menu fixe. On le descend en
+     pixels (la barre ne se mesure pas en unites maquette), et le contenu des
+     panneaux descend de la meme quantite pour ne pas venir buter dessous. */
+  [data-svctete]{top:clamp(74px, 17vw, 100px) !important}
+  [data-svc]{padding-top:clamp(152px, 38vw, 212px) !important}
+
+  /* --- 3. LE SOUS-TITRE DE « MES PROJETS » ------------------------------
+     Il etait au fer a gauche, justifie, sur toute la largeur : une bande de
+     texte. Il devient un bloc centre et compact — largeur bridee + text-wrap
+     balance pour que les lignes soient de longueur egale, ce qui lui donne sa
+     forme carree. hyphens:none : sur un bloc centre, les cesures cassent la
+     silhouette qu'on cherche justement a obtenir. */
+  #portfolio [data-galhead]{align-items:center !important}
+  #portfolio [data-galhead] p{
+    align-self:center !important;
+    width:min(74vw, 320px) !important;
+    max-width:none !important;
+    margin-inline:auto !important;
+    text-align:center !important;
+    text-wrap:balance;
+    hyphens:none !important; -webkit-hyphens:none !important;
+  }
+
+  /* --- 4. LE LETTRAGE COMPLET REVIENT DANS LA BARRE ----------------------
+     Le bloc « MENU MOBILE » remplacait la source de l'<img> par le monogramme
+     logo-p.png (26x26), au motif qu'un lettrage de ratio 5:1 serait « soit
+     minuscule, soit trop large » sur une barre de 56 px. Le calcul ne tient
+     pas : a 22 px de haut le lettrage fait 110 px de large, et la barre
+     dispose de 390 - 44 (le bouton) - 32 (les marges) = 314 px. Il y entre
+     largement. Redha veut le nom ecrit en entier, c'est donc lui qui revient.
+     On reecrit la source explicitement plutot que `content:normal` : la
+     regle du dessus est en !important, on la remplace au lieu d'esperer
+     qu'elle se defasse. */
+  [data-hdr] img{
+    content:url("/assets/logo-pixovery.webp") !important;
+    height:22px !important;
+    width:auto !important;
+  }
+
+  /* --- 6. « A PROPOS » ET « CONTACT » SE TOUCHAIENT ----------------------
+     Les deux respirations sont ecrites en --u : 32u sous A propos et 45u
+     au-dessus de Contact, soit 12 px et 17 px a 390 px de large. Vingt-neuf
+     pixels entre deux sections, c'est moins que l'interligne d'un
+     paragraphe — les deux blocs se lisaient comme un seul.
+     Sur desktop les memes valeurs donnent 45 et 63 px, ce qui tient : c'est
+     bien un defaut d'echelle, pas de mise en page. On passe donc en pixels
+     ici seulement. */
+  #apropos{padding-bottom:56px !important}
+  #contact{padding-top:64px !important}
+
+  /* --- 5a. LE VISUEL DE CONTACT ETAIT UNE VIGNETTE ----------------------
+     470*--u, soit 179 px sur un ecran de 390. L'ordinateur et le personnage
+     etaient illisibles, et l'ecran CRT (28,8 % de la largeur) tombait a
+     51 px. On le passe en unites d'ecran. */
+  [data-contactphoto]{width:min(80vw, 380px) !important}
+  [data-contactrow]{gap:28px !important}
+
+  /* --- 5b. LE FORMULAIRE ETAIT ECRASE -----------------------------------
+     Toutes ses mesures sont ecrites en --u dans le JSX : a 390 px de large,
+     --u vaut 0,381, donc les gelules faisaient 5 px de haut de padding, les
+     ecarts 5 px et le bouton 17 px. Le texte, lui, tenait bon (--tu a un
+     plancher a 1 px, donc 15 px). D'ou l'impression d'ecrasement : du texte
+     de taille normale dans des boites de taille miniature.
+     Les metriques tactiles passent donc en PIXELS. 16 px sur les champs
+     n'est pas un choix esthetique : en dessous, iOS zoome tout seul sur le
+     champ actif au moment de la saisie. */
+  #contact form{gap:14px !important; margin-top:24px !important}
+  #contact form > div{gap:12px !important}
+  #contact input, #contact textarea{
+    padding:14px 20px !important;
+    font-size:16px !important;
+    height:auto !important;
+  }
+  #contact textarea{
+    min-height:132px !important;
+    border-radius:20px !important;
+    line-height:1.45 !important;
+  }
+  #contact button[type="submit"]{
+    height:54px !important;
+    margin-top:10px !important;
+    border-radius:9px !important;
+    font-size:13px !important;
+    gap:10px !important;
+  }
+  #contact button[type="submit"] svg{width:17px !important; height:17px !important}
+  [data-formmsg]{min-height:20px !important; font-size:13px !important}
+}

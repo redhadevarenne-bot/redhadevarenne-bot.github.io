@@ -172,6 +172,102 @@ sauter — ne pas retirer la déclaration.
 `[data-floppy]` est le nœud prévu pour une éventuelle rotation 360°
 ultérieure : c'est le seul endroit à modifier.
 
+**L'entrée de la première disquette.** Les disquettes 2 à 4 sont portées
+par le rail, elles ont donc déjà une entrée. La première a `pk = 0` dès le
+départ : rien ne l'annonçait. Elle arrive du bord droit, **énorme au
+premier plan**, culbute et recule jusqu'à sa taille de rangement.
+
+**Elle est cadencée par le SCROLL. C'est tranché par Redha, ne le
+rediscute pas.** Le vol se lit sur la progression de la section :
+`DEPART = 0.86`, `FENETRE = 0.14` (les deux totalisent toujours 1), et
+`u = (eIn - DEPART) / FENETRE`. Tout est dans `PixoveryPage.jsx` autour
+de la ligne 485.
+
+> Une version antérieure était cadencée par le temps (`DUREE_VOL`
+> = 1250 ms, départ sur `tenue() && !verrou`). **Ce code n'existe plus.**
+> Si tu lis encore des mesures en millisecondes plus bas, elles datent de
+> cette version et ne décrivent pas le comportement actuel.
+
+**Ne pas élargir `FENETRE` pour « ralentir » le vol.** Ça ne le ralentit
+pas, ça déforme sa trajectoire : la disquette bouge pendant que la page
+monte, changer le rapport change la courbe vue à l'écran. Testé à 0,24
+puis 0,40, rejeté à l'œil par Redha. Pour un vol réellement plus lent,
+agir sur Lenis, pas ici.
+
+**Le rognage est assumé.** `[data-colle]` est un cadre `sticky top:0;
+height:100vh; overflow:hidden` — c'est lui qui cache les disquettes 2 à 4
+qui attendent à droite, il ne peut pas être retiré. Il ne coïncide avec
+l'écran qu'une fois la section collée.
+
+**Chaque grandeur a sa propre courbe, et c'est tout le sujet :**
+
+| | courbe | pourquoi |
+|---|---|---|
+| X | easeOutBack | arrive tôt, dépasse de ~3 vw à gauche puis revient : le rebond de la pose |
+| Y | easeInOut | arrive tard ; ce décalage avec X fabrique la courbe. Même courbe sur les deux = une diagonale |
+| échelle | **ease-in** (`u^1.9`) | reste grosse longtemps puis recule vite. Avec une ease-out, tout le recul se jouait hors champ |
+| culbute | easeOutBack | suit X |
+
+**Le rebond ne doit pas toucher l'échelle.** Avec l'easeOutBack partagé,
+la disquette passait *sous* sa taille de rangement (312 px pour 365) avant
+de regrossir : on lisait un deuxième rebond, pas un éloignement.
+
+Mesuré section calée, sur 100 points du vol : apparaît à 100 ms, **1150 ms
+visibles sur 1250**, 1228 px de large à l'entrée pour 365 à l'arrivée
+(3,4×), marges de 114 px en haut et 50 px en bas. La culbute est **à plat**
+(`--floppy-tilt`), jamais en `rotateY` : un `rotateY` de 180° afficherait
+l'image en miroir et retournerait le texte de l'étiquette en plein vol.
+
+**Le va-et-vient de repos est un cône, pas un balancier.** Un balancier
+sur un seul axe s'arrête à chaque extrémité — la vitesse y est nulle et on
+*voit* la disquette se figer deux fois par cycle. Les deux axes sont donc
+déphasés d'un quart de tour : `rotateY` suit un sinus, `rotateX` un
+cosinus. Quand l'un est immobile, l'autre passe par zéro à sa vitesse
+maximale.
+
+Le timing est **linéaire, obligatoirement** : un `ease-in-out`
+remettrait un temps mort sur chaque palier et ruinerait le déphasage.
+L'amplitude du hochement dérive de `--floppy-sway` (45 %), donc le survol
+ouvre le cône du même geste.
+
+Cadences : cône **3,8 s**, flottement **5,3 s**. Le rapport (0,717) n'est
+pas une fraction simple, donc les deux ne se resynchronisent jamais sur un
+cycle court — avec 4 s et 6 s ils retomberaient en phase toutes les 12 s
+et le mouvement paraîtrait mécanique.
+
+Mesuré sur 5 secondes, image par image : vitesse minimale passée de
+0,00019 à 0,00729 (38×), et **0 image quasi immobile contre 6 %** avant.
+
+## Services — la frappe du sous-texte : SUPPRIMÉE
+
+Une frappe caractère par caractère sur les sous-textes de Services a été
+construite, puis **entièrement retirée à la demande de Redha**. Vérifié
+par grep le 18/08/2026 : aucun `RESPIRE`, aucune constante de frappe
+dans `PixoveryPage.jsx`. Il n'en reste rien dans le code.
+
+**Ne pas la reconstruire sans que Redha le demande explicitement.**
+
+## Deux pièges de méthode, appris à la dure
+
+**Ne remplace jamais une zone de fichier délimitée par deux repères de
+texte.** Sur ce fichier de 190 Ko qu'on ne lit jamais en entier, on ne
+voit pas ce qu'il y a entre les deux repères. Ça a effacé un bloc entier
+de code deux fois dans la même session — la page devenait blanche.
+Remplace des chaînes exactes et courtes, une par une.
+
+**`node --check` ne valide que la grammaire.** Un appel à une fonction qui
+n'existe plus est du JavaScript parfaitement valide : le contrôle passe au
+vert sur un fichier qui plante au montage. Après chaque édition, vérifier
+aussi que **chaque identifiant utilisé est déclaré quelque part**.
+
+**On ne peut pas voir les animations depuis un onglet piloté.** Chrome
+suspend `requestAnimationFrame` dans un onglet en arrière-plan : 0 image
+en 600 ms, mesuré. Tout ce qui passe par le ticker — Lenis, le vol des
+disquettes, le rail — ne s'exécute pas. Les valeurs qu'on y lit sont
+figées, et les prendre pour des mesures fait dire n'importe quoi. Pour
+juger d'une animation, soit un harnais local (Playwright, onglet au
+premier plan), soit l'œil de Redha.
+
 ## Méthode
 
 Direction artistique d'abord, code ensuite. Montrer le résultat.
