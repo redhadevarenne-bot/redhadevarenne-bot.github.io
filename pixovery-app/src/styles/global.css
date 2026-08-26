@@ -1665,6 +1665,47 @@ footer, footer a, small{
   #apropos{padding-bottom:56px !important}
   #contact{padding-top:64px !important}
 
+  /* --- 7. LE LOGO DE L'ECRAN DE CHARGEMENT -------------------------------
+     34*--u, soit 13 px de haut : sur l'ecran d'attente, plein cadre noir, il
+     ressemblait a une coquille. Ratio 5:1, donc 42 px de haut font 210 px de
+     large — il reste 180 px de marge sur un ecran de 390. */
+  [data-intro] img{height:42px !important; width:auto !important}
+
+  /* --- 8. LE PERSONNAGE D'« A PROPOS » ------------------------------------
+     510*--u = 194 px. Comme partout ailleurs sur cette page, une largeur
+     ecrite en unites maquette s'effondre des qu'on quitte le grand ecran. */
+  [data-aboutphoto]{width:min(82vw, 400px) !important}
+
+  /* --- 9. LA BARRE « 05 » DE CONTACT PASSAIT DERRIERE LE PERSONNAGE -------
+     Deux causes cumulees. D'abord l'ecart : l'entete et la rangee sont
+     separes par 30*--u, soit 11 px — le trait venait toucher le visuel.
+     Ensuite l'empilement : ni l'entete ni [data-contactphoto] ne declarent de
+     z-index, l'ordre du document decide donc seul, et le visuel — qui vient
+     APRES — se peint par-dessus. Le rendre plus grand (point 5a) a rendu le
+     recouvrement visible. On separe, et on donne la priorite a l'entete. */
+  #contact [data-chapter]{position:relative !important; z-index:2 !important}
+  #contact [data-contactrow]{margin-top:24px !important; z-index:1}
+
+  /* --- 10. LE PERSONNAGE DU PROCESSUS REVIENT SUR TELEPHONE ---------------
+     Il etait masque ici, et spin() sortait avant de creer les Image() pour ne
+     pas telecharger une planche invisible. LES DEUX ONT SAUTE ENSEMBLE : si
+     tu remets un display:none ici, remets la sortie anticipee dans spin(),
+     sinon la planche part au telechargement pour rien.
+     La sortie du sticky : sur une seule colonne le visuel passe SOUS les
+     etapes, un sticky cale a 50vh - 242*--u n'a plus de sens et le collait en
+     haut. Il redevient un element normal, centre, a la suite de la liste. */
+  [data-tour]{
+    display:block !important;
+    position:relative !important;
+    top:auto !important;
+    justify-self:center !important;
+    align-self:center !important;
+    width:min(66vw, 300px) !important;
+    height:auto !important;
+    aspect-ratio:338 / 484;
+    margin:calc(20*var(--u)) auto 0 !important;
+  }
+
   /* --- 5a. LE VISUEL DE CONTACT ETAIT UNE VIGNETTE ----------------------
      470*--u, soit 179 px sur un ecran de 390. L'ordinateur et le personnage
      etaient illisibles, et l'ecran CRT (28,8 % de la largeur) tombait a

@@ -238,10 +238,18 @@ export default class PixoveryPage extends React.Component {
     const cv = this.q('[data-spin]'), tour = this.q('[data-tour]');
     const sec = this.q('#processus');
     if(!cv || !tour || !sec) return;
-    /* Sur mobile la figurine est masquee (voir global.css). On sort AVANT de
-       creer les Image() : sinon les deux planches, 1,3 Mo, partiraient en
-       telechargement sur telephone pour un element que personne ne voit. */
-    if(window.matchMedia && window.matchMedia('(max-width:768px)').matches) return;
+    /* La figurine EST affichee sur telephone depuis le 26/08 (demande de
+       Redha). L'ancienne sortie anticipee a saute EN MEME TEMPS que le
+       display:none du CSS : les deux doivent toujours bouger ensemble, sinon
+       on paie le telechargement d'une planche que personne ne voit, ou
+       l'inverse — un canvas visible et vide.
+       CE QUE CA COUTE SUR TELEPHONE : proc-v7.webp, 1,8 Mo au telechargement
+       et ~64 Mo une fois decodee. Le chargement reste differe
+       (IntersectionObserver, 400 % de marge) et les <img> sont videes des que
+       les bitmaps existent — mais les deux planches du hero, elles, ne sont
+       jamais liberees. Le pic tient donc autour de 170 Mo de bitmaps. C'est
+       le point a surveiller si le site se met a saccader ou a recharger tout
+       seul sur un telephone d'entree de gamme. */
     const cx = cv.getContext('2d');
     if(!cx) return;
 
@@ -588,6 +596,18 @@ export default class PixoveryPage extends React.Component {
     if(n < 2) return;
     const num = this.q('[data-svcn]'), barre = this.q('[data-svcbarre]');
 
+    /* TACTILE : AUCUN CRAN. Le systeme de crans est fait pour la molette, ou
+       un evenement = une intention. Au doigt il ne peut pas marcher : le
+       declencheur attend 28 px de glissement, or des que ces 28 px sont
+       parcourus le navigateur a DEJA engage son defilement natif, et il
+       ignore alors le preventDefault du reste du geste. On obtenait donc le
+       pire des deux : ni un defilement libre, ni un calage propre.
+       Le rail, lui, n'a jamais eu besoin des crans — cadence() le positionne
+       en continu sur la progression du scroll (voir plus bas,
+       translate3d(-p * ...)). Sur telephone on laisse donc le defilement
+       natif faire son travail et le rail suit tout seul. */
+    const tactile = !!(window.matchMedia && window.matchMedia('(max-width:768px)').matches);
+
     const haut = () => sec.getBoundingClientRect().top + window.scrollY;
     const course = () => Math.max(1, sec.offsetHeight - window.innerHeight);
     const posDe = i => haut() + course() * i / (n - 1);
@@ -674,7 +694,10 @@ export default class PixoveryPage extends React.Component {
          section en vol. Sans ce garde-fou, l'entree ci-dessous la recadrait
          de force — lenis.scrollTo immediate+force — et le voyage mourait ici :
          on cliquait Contact, on atterrissait sur Services. */
-      if(t0 && !etaitTenue && !this.navVol){
+      /* !tactile : ce recadrage force (lenis.scrollTo immediate+force) se bat
+         avec l'inertie native du doigt sur telephone — la page etait tiree en
+         arriere au moment ou on entrait dans la section. */
+      if(t0 && !etaitTenue && !this.navVol && !tactile){
         /* On vient d'entrer. preventDefault n'annule PAS un defilement deja
            lance : sans arret franc, l'elan traverse la section et le premier
            service ne se pose jamais. On coupe donc net, et on se cadre sur
@@ -1064,6 +1087,7 @@ export default class PixoveryPage extends React.Component {
     let y0 = null;
     this.on(window, 'touchstart', e => { y0 = e.touches[0].clientY; }, {passive: true});
     this.on(window, 'touchmove', e => {
+      if(tactile) return;          /* voir le commentaire de `tactile` plus haut */
       if(y0 === null) return;
       const dy = y0 - e.touches[0].clientY;
       if(Math.abs(dy) < 28) return;
