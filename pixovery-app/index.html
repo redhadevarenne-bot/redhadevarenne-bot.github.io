@@ -581,6 +581,16 @@
      ou le navigateur a besoin de sa bande passante pour la vraie image du
      hero. Corrige : on precharge ce qui est reellement affiche. -->
 <link rel="preload" as="image" href="/assets/pot-solide.webp" fetchpriority="high">
+<!-- 28/08 : la figurine du hero manquait plusieurs secondes a l'arrivee sur
+     Chrome — « la landing est vide pendant un moment ». Sa planche fait
+     1,45 Mo et son telechargement ne demarrait qu'a l'execution du
+     JavaScript, donc apres l'analyse du HTML et du bundle. Prechargee ici,
+     elle part pendant que le navigateur lit encore la page. C'est la plus
+     grosse image du hero, donc c'est elle qui decide du moment ou la page
+     a l'air remplie. -->
+<link rel="preload" as="image" href="/assets/perso-tour-v2.webp" fetchpriority="high">
+<!-- le filaire de la pose de repos : petit (124 Ko) et visible des l'arrivee -->
+<link rel="preload" as="image" href="/assets/filaire-repos.webp">
 
 </head>
 <body>

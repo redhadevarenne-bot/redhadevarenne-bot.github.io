@@ -90,6 +90,44 @@ const ALLEGE = (() => {
 const LEGER = typeof window !== 'undefined' && !!(window.matchMedia
   && window.matchMedia('(max-width:768px)').matches);
 
+/* ============================================================================
+   MODE REDUIT — « reduire les animations » du systeme
+
+   CE QUI N'ALLAIT PAS (constate le 28/08 sur pixovery.com, sur le PC de
+   Redha). Windows a « Afficher les animations » desactive. Le code detectait
+   `prefers-reduced-motion` et coupait Lenis : le defilement redevenait natif,
+   donc par bonds de ~100 px a chaque cran de molette.
+
+   Sauf que TOUT LE RESTE continuait de tourner. Le rail des services, la
+   parallaxe des colonnes, la rotation du blister, la chute du titre : ce
+   sont des animations *scrubbees*, calees sur la position de scroll. Sur un
+   scroll continu elles glissent ; sur un scroll en escalier, elles avancent
+   par bonds elles aussi. On obtenait donc le pire des deux mondes — ni la
+   douceur de Lenis, ni le calme qu'on demandait en coupant les animations.
+   D'ou « pixovery.com est une horreur » alors que `?motion=full`, qui force
+   Lenis, etait parfaitement fluide.
+
+   L'ERREUR DE RAISONNEMENT ETAIT LA : couper Lenis, ce n'est pas reduire le
+   mouvement, c'est reduire le LISSAGE du mouvement. Le mouvement, lui,
+   restait entier et devenait haché.
+
+   CE QU'ON FAIT MAINTENANT. `prefers-reduced-motion` veut dire : montre-moi
+   la page, pas le spectacle. On ne coupe donc plus le lissage — on coupe le
+   SPECTACLE, c'est-a-dire tout ce qui se recalcule a chaque image :
+     - le titre du hero est pose d'emblee, sans chute ;
+     - le blister reste sur sa pose de face, sans rotation ;
+     - la parallaxe des colonnes et des visuels ne bouge plus.
+   Le defilement redevient natif et franc, les images sont nettes et
+   immobiles, et plus rien ne se recalcule pendant qu'on descend. C'est ce
+   que la personne a demande a son systeme.
+
+   `?motion=full` continue de tout forcer, quel que soit le reglage : c'est
+   le mode de travail, et c'est ce qu'il faut ouvrir pour juger le rendu.
+   ========================================================================== */
+const REDUIT = typeof window !== 'undefined'
+  && !/[?&]motion=full/.test(window.location.search)
+  && !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
 export default class PixoveryPage extends React.Component {
   constructor(props){
     super(props);
@@ -326,6 +364,16 @@ export default class PixoveryPage extends React.Component {
     });
     const cx = cv.getContext('2d');
     if(!cx) return;
+    /* La taille du canvas suit celle des tuiles REELLEMENT servies : les
+       attributs width/height du JSX valent pour l'ordinateur, mais sur
+       telephone les tuiles font 296 x 422. Sans ce recalage, drawImage
+       dessinerait une tuile de 296 px dans un canvas de 448 et la figurine
+       serait posee en haut a gauche d'un cadre trop grand.
+       A FAIRE AVANT imageSmoothing : redimensionner un canvas remet son
+       contexte a zero. Le recalage est donc pose JUSTE APRES la declaration
+       de TW/TH, plus bas — pas ici, ou ces constantes n'existent pas encore
+       (`const` en zone morte temporelle : y toucher avant sa declaration
+       leve une ReferenceError et tue toute la section). */
     /* Le canvas reste plus petit que sa taille d'affichage : autant demander
        au navigateur son meilleur filtre pour l'agrandissement. Ca ne coute
        rien ici — on ne redessine qu'aux changements de pose. */
@@ -420,7 +468,43 @@ export default class PixoveryPage extends React.Component {
        pas dans le code : refilmer le blister de plus pres, ou le rendre en
        3D. Une planche en tuiles ~640x915 tiree de la MEME video ne servirait
        a rien — on agrandirait du flou. */
-    const N = 60, COLS = 10, PER = 60, TW = 448, TH = 640;
+    /* --- TELEPHONE : UNE PLANCHE DIX FOIS PLUS LEGERE (28/08) ----------
+       Redha : « pixovery.com est toujours aussi saccade ». Mesure faite, et
+       le coupable n'est pas le code — c'est la MEMOIRE, encore une fois.
+
+       Sur un telephone, ce site tenait DEUX planches decodees en permanence :
+         perso-tour-v2.webp   3320 x 4096 RGBA = 54 Mo
+         proc-v5-net.webp     4480 x 3840 RGB  = 68 Mo
+       Soit ~122 Mo de bitmaps residents, pour deux animations decoratives.
+       Le budget memoire d'un onglet sur un telephone milieu de gamme est en
+       dessous. Le navigateur jette donc des bitmaps puis les redecode, et ces
+       redecodages tombent en plein defilement : ca saccade PARTOUT, pas
+       seulement la ou l'animation est visible. C'est exactement le
+       raisonnement qui avait fait couper la planche filaire le 26/08.
+
+       L'absurdite : sur telephone le blister s'affiche a min(66vw, 300px),
+       soit ~260 px de large. On decodait donc 68 Mo de tuiles de 448 px pour
+       dessiner 260 px.
+
+       `proc-mobile.webp` : 30 poses (une sur deux, 12 deg par pose,
+       espacement regulier — prendre 40 poses sur 60 donnerait un espacement
+       inegal et la rotation semblerait accelerer par a-coups), tuiles de
+       296 x 422. 2960 x 1266 = 3,7 Mpx, soit 11 Mo decodes au lieu de 68, et
+       0,63 Mo au telechargement au lieu de 2,23.
+       Sur telephone on echange donc de la finesse de rotation contre de la
+       fluidite GENERALE du site. C'est le bon sens de l'echange : personne
+       ne compte les poses d'une figurine, tout le monde sent une page qui
+       accroche.
+
+       Sur ordinateur, RIEN NE CHANGE : la planche pleine reste servie. */
+    const N = LEGER ? 30 : 60, COLS = 10, PER = LEGER ? 30 : 60,
+          TW = LEGER ? 296 : 448, TH = LEGER ? 422 : 640;
+    /* Le canvas prend la taille des tuiles reellement servies (voir le
+       commentaire pres de getContext). Redimensionner remet le contexte a
+       zero : on repose donc le lissage juste apres. */
+    cv.width = TW; cv.height = TH;
+    cx.imageSmoothingEnabled = true;
+    cx.imageSmoothingQuality = 'high';
     const sheets = [new Image()];
     let bitmaps = null;                 /* les planches decodees une fois pour toutes */
     let vue = -1, prets = 0, rate = false;
@@ -619,7 +703,10 @@ export default class PixoveryPage extends React.Component {
       const au = Math.abs(u);
       const s2 = Math.max(0, (au - PALIER) / (1 - PALIER));
       const e2 = s2 * s2 * (3 - 2 * s2);
-      const pose = (((u < 0 ? -1 : 1) * e2 * (N / 2)) + N) % N;
+      /* Mode reduit : la pose 0 est le packshot de face. On la garde, et
+         draw() sort immediatement puisque l'image ne change pas — plus un
+         seul drawImage pendant le defilement. */
+      const pose = REDUIT ? 0 : (((u < 0 ? -1 : 1) * e2 * (N / 2)) + N) % N;
       draw(pose, reduce ? 1 : ZOOM0 + (1 - ZOOM0) * ze);
       /* Fondu a l'entree uniquement. Il y avait aussi une sortie — la
          figurine s'effacait sur les 16 derniers pourcents de la section —
@@ -707,7 +794,7 @@ export default class PixoveryPage extends React.Component {
       sheets.forEach((im, k) => {
         im.onload = pret;
         im.onerror = () => { rate = true; pret(); };
-        im.src = '/assets/proc-v5-net.webp';
+        im.src = LEGER ? '/assets/proc-mobile.webp' : '/assets/proc-v5-net.webp';
       });
     };
     if('IntersectionObserver' in window){
@@ -2401,7 +2488,10 @@ export default class PixoveryPage extends React.Component {
        (« une fois montre, ca reste montre »).
        Pour revenir au comportement reversible : supprimer `paMax` et rendre
        `pa` egal a `brut`. */
-    let paMax = 0, pose = false;
+    /* Mode reduit : on part a 1, donc la premiere passe pose le titre dans
+       son etat final et l'arret definitif se declenche aussitot. Aucune
+       lettre n'est plus touchee ensuite. */
+    let paMax = REDUIT ? 1 : 0, pose = false;
     const poseLettres = () => {
       const brut = Math.min(1, Math.max(0, (window.scrollY || 0) / courseTitre()));
       if(brut > paMax) paMax = brut;
@@ -3427,7 +3517,10 @@ export default class PixoveryPage extends React.Component {
         const d = (vh*.85 - r.top) / (vh*.45);
         steps.style.setProperty('--draw', Math.max(0, Math.min(1, d)).toFixed(3));
       }
-      floaters.forEach(el => {
+      /* Mode reduit : aucune parallaxe. C'est le poste le plus cher de cette
+         fonction — un getBoundingClientRect et une ecriture de variable CSS
+         par element, a chaque image de defilement. */
+      if(!REDUIT) floaters.forEach(el => {
         const b = el.getBoundingClientRect();
         if(b.bottom < -200 || b.top > vh + 200) return;
         const c = (b.top + b.height/2 - vh/2) / vh;
