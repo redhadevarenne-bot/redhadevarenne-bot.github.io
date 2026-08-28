@@ -1204,7 +1204,7 @@ export default class PixoveryPage extends React.Component {
          l'equivalent tactile de SEUIL pour la molette. */
       const SEUIL_T = 34;
       let yDep = null, decide = false, libre = false, tire = false;
-      let minuteur = null, geste = 0;
+      let minuteur = null, geste = 0, tVerrou = 0;
       const quand = () => (window.performance && performance.now) ? performance.now() : Date.now();
       /* Le service le plus proche de la position ACTUELLE. On ne se fie pas a
          `index` en entrant : on y arrive par un defilement natif, il est donc
@@ -1252,11 +1252,23 @@ export default class PixoveryPage extends React.Component {
           if(!verrou) index = rang();
           if((dir > 0 && index >= n - 1) || (dir < 0 && index <= 0)){ libre = true; return; }
         }
+        /* FILET DE SECURITE — NE JAMAIS PIEGER LE VISITEUR.
+           Tant qu'on preventDefault, la page ne peut plus bouger DU TOUT :
+           c'est ce qui donne les crans, et c'est aussi ce qui rend un verrou
+           bloque catastrophique. `verrou` est leve par le onComplete de
+           lenis.scrollTo ; si ce rappel n'arrive jamais — passage interrompu,
+           Lenis arrete, cible identique a la position — la section garderait
+           le doigt pour toujours et on ne pourrait meme plus en sortir.
+           Au-dela d'une seconde et demie (le passage en dure 0,62), on
+           considere le verrou perdu : on le leve et on rend le geste au
+           navigateur. Mieux vaut un cran rate qu'une page morte. */
+        if(verrou && tVerrou && quand() - tVerrou > 1500){ verrou = false; libre = true; return; }
         /* La section tient le geste : la page ne bouge plus d'elle-meme. */
         e.preventDefault();
         if(tire || verrou) return;
         if(Math.abs(dy) < SEUIL_T) return;
         tire = true;
+        tVerrou = quand();
         vers(index + (dy > 0 ? 1 : -1));
       }, {passive: false});
 

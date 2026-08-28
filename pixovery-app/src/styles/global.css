@@ -1537,19 +1537,24 @@ footer, footer a, small{
       Contact, meme correction — sur telephone, ces mesures passent en
       PIXELS.
 
-   CE QU'ON FAIT. La fiche devient une vraie feuille plein ecran, et
-   L'IMAGE RESTE. `position:sticky` la colle en haut de la zone qui defile :
-   le texte glisse dessous, le mockup ne quitte jamais l'ecran. C'est ce qui
-   fait la difference entre « une image et du texte a la suite » et une fiche
-   projet — on lit la presentation en gardant le visuel sous les yeux.
+   CE QU'ON FAIT. La fiche devient une vraie feuille plein ecran, coupee en
+   deux zones qui ne se melangent pas : EN HAUT un visuel fixe, EN BAS un
+   texte qui defile. La scene elle-meme ne defile plus du tout — c'est ce qui
+   garantit que le mockup ne peut plus etre pousse hors de l'ecran ni tranche
+   par un bord.
 
-   Elle est opaque (background:#08070C, herite du bloc desktop) : c'est ce
-   qui permet au texte de passer DESSOUS sans transparence. Ne la rends pas
-   transparente sans donner un fond au panneau.
+   44 dvh pour le visuel : de quoi le lire en entier, en laissant plus de la
+   moitie de l'ecran au texte. `contain` fait le reste — l'image est montree
+   ENTIERE, quitte a laisser deux bandes sombres sur les cotes. Une image de
+   projet ne se recadre jamais : c'est du travail livre au millimetre.
 
-   46 vh : la moitie de l'ecran pour le visuel, l'autre pour le texte. Plus
-   haut, il ne reste plus assez de lignes lisibles sous l'image ; plus bas,
-   le mockup redevient une vignette.
+   PREMIERE TENTATIVE, ECARTEE : coller le visuel en `position:sticky` en
+   haut d'une scene qui defile. Sur le papier c'est plus elegant — le texte
+   glisse sous l'image. En pratique la scene defilait toujours, et selon que
+   `aspect-ratio:1/1` ou `max-height` l'emportait, la boite du visuel n'avait
+   pas le meme rapport : l'image ressortait recadree. Deux mecaniques qui se
+   disputent la meme hauteur, c'est une de trop. Une hauteur fixe, une seule
+   zone qui defile, et le probleme n'existe plus.
    -------------------------------------------------------------------------- */
 @media (max-width:900px){
   /* plein ecran franc : la marge de 26 u et le coin arrondi n'ont plus de
@@ -1563,27 +1568,46 @@ footer, footer a, small{
     flex-direction:column;
     height:100%; max-height:none;
     border:0; border-radius:0;
-    overflow-y:auto;
-    /* le geste ne traverse plus vers la page derriere une fois en butee */
-    overscroll-behavior:contain;
-    -webkit-overflow-scrolling:touch;
+    /* LA SCENE NE DEFILE PLUS. C'etait la cause de « l'image est rognee » :
+       elle etait la boite qui defile, donc le visuel remontait avec le texte
+       et se faisait trancher par son bord haut. Ici elle ne bouge plus du
+       tout — elle se contente d'empiler deux zones : un visuel fixe et un
+       texte qui defile. Seul le panneau a le droit de defiler. */
+    overflow:hidden;
   }
   [data-lbmode="fiche"] [data-lbimg]{
-    position:sticky; top:0; z-index:1;
+    /* Hauteur FIXE et explicite, pas un aspect-ratio plafonne par un
+       max-height : les deux se battaient, et selon lequel gagnait la boite
+       n'avait pas le meme rapport. Ici la boite fait exactement 44 dvh de
+       haut sur toute la largeur, et `contain` garantit que L'IMAGE ENTIERE
+       y tient — au pire il reste deux bandes sombres sur les cotes, du meme
+       noir que le fond. Une image de projet ne se recadre jamais.
+       dvh et pas vh : sur telephone la barre d'adresse se retracte, et vh
+       reste fige sur la hauteur maximale — le visuel debordait sous le
+       panneau tant que la barre etait visible. */
     flex:0 0 auto;
-    width:100%; aspect-ratio:1/1;
-    max-height:46vh !important;
+    width:100%;
+    height:44dvh;
+    aspect-ratio:auto !important;
+    max-height:none !important;
+    max-width:none !important;
     object-fit:contain !important;
+    object-position:center center;
+    padding:10px 10px 0;
+    box-sizing:border-box;
   }
   [data-lbmode="fiche"] [data-lbpanel]{
-    flex:0 0 auto; z-index:2;
-    overflow:visible;
+    /* min-height:0 est obligatoire : sans lui un enfant flex refuse de
+       devenir plus petit que son contenu et le panneau pousse la scene au
+       lieu de defiler a l'interieur. */
+    flex:1 1 auto; min-height:0; z-index:2;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
     justify-content:flex-start;
     /* en pixels, pas en --u : voir le point 3 ci-dessus */
-    padding:26px 22px 40px;
-    /* le texte arrive sur un fond a lui, sinon on verrait l'image
-       collee au travers pendant qu'il glisse dessus */
-    background:linear-gradient(to bottom, #0A0910 0%, #0A0910 100%);
+    padding:22px 22px 40px;
+    background:#0A0910;
   }
   /* une ligne de lumiere a la jonction : elle marque le bord du visuel
      pendant que le texte passe dessous, sinon les deux se touchent sans
