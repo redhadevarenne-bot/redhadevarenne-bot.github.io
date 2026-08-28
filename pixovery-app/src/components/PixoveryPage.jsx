@@ -1166,6 +1166,66 @@ export default class PixoveryPage extends React.Component {
     }, {passive: false});
     this.on(window, 'touchend', () => { y0 = null; }, {passive: true});
 
+    /* ===== TACTILE : CALAGE EN QUATRE TEMPS (28/08) =======================
+       Le commentaire de `tactile` en haut de services() explique pourquoi les
+       CRANS ne marchent pas au doigt : ils travaillent PENDANT le geste, et a
+       ce moment-la le navigateur a deja engage son defilement natif, qui
+       ignore preventDefault. Conclusion tiree alors : laisser le doigt libre.
+       Elle reste vraie — on ne touche a rien pendant le geste.
+       Ce qui est ajoute ici travaille APRES : on laisse le doigt et l'inertie
+       faire tout leur travail, on attend le silence, et alors seulement on
+       pose la section sur le service le plus proche. C'est le principe du
+       scroll-snap CSS, en JS parce qu'il faut viser des positions calculees
+       (posDe) et non des elements, et parce qu'un scroll-snap-type sur le
+       document snapperait AUSSI le reste de la page.
+
+       Trois garde-fous, tous necessaires :
+       - `doigt` : rien ne bouge tant que le doigt est pose. Caler sous le
+         doigt, c'est se battre avec lui.
+       - `geste` : le calage n'existe que dans les 2 s qui suivent un vrai
+         geste tactile. Sans ca, un clic de menu qui traverse la section, un
+         resize ou une rotation d'ecran declencheraient un recadrage.
+       - `tenue()` : la meme condition que partout ailleurs ici. Si on est en
+         train de sortir de la section, on ne se fait pas retenir.
+
+       `behavior:'smooth'` natif, et PAS le tween maison `vers()` : celui-ci
+       ecrit la position frame par frame (ou passe par Lenis avec lock:true),
+       et les deux se battent avec l'inertie native du doigt, qui court encore
+       apres le touchend. Le smooth natif, lui, est annule tout seul par le
+       navigateur des que le doigt revient — c'est exactement ce qu'on veut.
+       Sous « reduire les animations » il devient un saut : degrade, pas
+       casse. */
+    if(tactile){
+      let doigt = false, minuteur = null, geste = 0;
+      const quand = () => (window.performance && performance.now) ? performance.now() : Date.now();
+      const cale = () => {
+        minuteur = null;
+        if(doigt || verrou) return;
+        if(!geste || quand() - geste > 2000) return;
+        if(!tenue()) return;
+        const p = (window.scrollY - haut()) / course();
+        const i = Math.max(0, Math.min(n - 1, Math.round(p * (n - 1))));
+        const cible = Math.round(posDe(i));
+        index = i;
+        /* 3 px : en dessous, on est arrive. Sans ce seuil, le calage se
+           rappellerait lui-meme indefiniment, puisque son propre glissement
+           reveille l'ecouteur de scroll ci-dessous. */
+        if(Math.abs(window.scrollY - cible) < 3){ queue(); return; }
+        window.scrollTo({top: cible, behavior: 'smooth'});
+      };
+      /* 130 ms de silence = le geste est fini. Assez court pour que le calage
+         suive l'inertie de pres, assez long pour ne pas se declencher entre
+         deux evenements de scroll d'un meme elan. */
+      const armer = () => { if(minuteur) clearTimeout(minuteur); minuteur = setTimeout(cale, 130); };
+      this.on(window, 'touchstart', () => {
+        doigt = true;
+        if(minuteur){ clearTimeout(minuteur); minuteur = null; }
+      }, {passive: true});
+      this.on(window, 'touchend', () => { doigt = false; geste = quand(); armer(); }, {passive: true});
+      this.on(window, 'scroll', () => { if(geste) armer(); }, {passive: true});
+      this.cleanups.push(() => { if(minuteur) clearTimeout(minuteur); });
+    }
+
     this.on(window, 'keydown', e => {
       const bas = e.key === 'ArrowDown' || e.key === 'PageDown';
       const hautK = e.key === 'ArrowUp' || e.key === 'PageUp';
@@ -1319,6 +1379,11 @@ export default class PixoveryPage extends React.Component {
       const arrive = () => {
         if(this.lenis) this.lenis.scrollTo(y, { immediate: true, force: true });
         else window.scrollTo(0, y);
+        /* La section est posee : on revele son contenu INSTANTANEMENT, avant
+           que le rideau ne se leve. Sinon le titre entame seulement son fondu
+           de 1,05 s au moment ou le noir s'ouvre (0,5 s) — on arrive sur un
+           titre a moitie transparent, encore decale vers le bas. */
+        if(this.reveleDansZone) this.reveleDansZone(this.q(href));
         try { history.replaceState(null, '', href); } catch(_){}
         requestAnimationFrame(() => requestAnimationFrame(() => {
           if(voile){
@@ -1354,9 +1419,28 @@ export default class PixoveryPage extends React.Component {
           vole(this.heroPoseY(), href);
           return;
         }
-        if(mark){
-          const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--u')) || 1;
-          top = Math.max(0, window.scrollY + mark.getBoundingClientRect().top - (HDR + GAP) * u);
+        const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--u')) || 1;
+        const viser = el => Math.max(0, window.scrollY
+          + el.getBoundingClientRect().top - (HDR + GAP) * u);
+        if(mark) top = viser(mark);
+        /* ON DOIT VOIR LE TITRE EN ARRIVANT.
+           La cible naturelle est la ligne numerotee ([data-chapter]), et sur
+           ordinateur elle suffit : le titre la suit de quelques dizaines de
+           pixels. Sur telephone, non — les colonnes se remettent les unes
+           SOUS les autres, et le visuel de la section (la photo de Contact
+           fait 470u de large, donc toute la largeur une fois empilee) vient
+           s'intercaler entre le numero et le titre. On atterrissait sur
+           « 05 ——— » avec « DISCUTONS DE VOTRE PROJET » une hauteur d'ecran
+           plus bas : la section avait l'air vide.
+           Regle : si viser le numero laisse le titre a plus de la moitie de
+           l'ecran, on vise le titre. Ce qu'on perd alors, c'est la ligne
+           numerotee — un ornement — et ce qu'on gagne, c'est ce que le
+           visiteur est venu lire. Le seuil se declenche tout seul quand la
+           mise en page l'exige : rien a brancher sur une largeur d'ecran. */
+        const titre = sec.querySelector('h2');
+        if(titre){
+          const yTitre = viser(titre);
+          if(yTitre - top > window.innerHeight * 0.5) top = yTitre;
         }
         vole(top, href);
       });
@@ -1956,6 +2040,33 @@ export default class PixoveryPage extends React.Component {
         if(rule) rule.style.transform = 'scaleX(1)';
       });
     };
+    /* REVELATION INSTANTANEE D'UNE ZONE — utilisee par le menu.
+       Le voyage du menu se fait rideau baisse : on coupe au noir, on pose la
+       page, on rouvre. Pour que ca marche, la section doit etre DEJA posee
+       quand le noir se retire. Or check() ne fait que LANCER le fondu, qui
+       dure 1,05 s, alors que le rideau se leve en 0,5 s : on arrivait sur un
+       titre a moitie transparent, encore decale de 34u vers le bas, qui
+       finissait son entree sous les yeux. On ne voyait pas la section
+       arriver — on la voyait se construire.
+       Ici on pose l'etat final SANS transition. Ces elements ne rejouent
+       jamais (« une fois montre, ca reste montre »), donc couper leur
+       transition pour de bon ne coute rien. */
+    this.reveleDansZone = zone => {
+      if(!zone) return;
+      for(let k = items.length - 1; k >= 0; k--){
+        const it = items[k];
+        if(!zone.contains || !zone.contains(it.el)) continue;
+        it.el.style.transition = 'none';
+        it.el.style.transitionDelay = '0ms';
+        it.el.style.opacity = '1';
+        if(!it.fade) it.el.style.transform = 'none';
+        const rule = it.el.querySelector && it.el.querySelector('[data-rule]');
+        if(rule){ rule.style.transition = 'none'; rule.style.transform = 'scaleX(1)'; }
+        items.splice(k, 1);
+      }
+    };
+    this.cleanups.push(() => { this.reveleDansZone = null; });
+
     const queueReveal = () => {
       if(typeof requestAnimationFrame !== 'function'){ check(); return; }
       if(queued) return;

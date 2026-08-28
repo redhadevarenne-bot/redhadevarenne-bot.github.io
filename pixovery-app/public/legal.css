@@ -1,0 +1,107 @@
+/* Feuille COMMUNE aux pages legales statiques de public/ (mentions legales,
+   politique de confidentialite). Ces pages ne passent pas par Vite : elles
+   n'ont donc pas global.css, et ce fichier evite d'ecrire deux fois le meme
+   habillage — une correction ici vaut pour les deux pages. */
+/* Page STATIQUE, dans public/ : elle ne passe pas par Vite, donc pas de
+   global.css. Tout est ici, et les polices sont chargees depuis le meme
+   dossier que le site — c'est pour ca qu'elles avaient ete extraites du
+   base64 en .woff2. Newake n'a qu'une graisse : font-weight 400 obligatoire,
+   sinon le navigateur fabrique un gras de synthese. */
+@font-face{font-family:'Neue Haas Display';src:url(/assets/fonts/nhd-500.woff2) format('woff2');font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:'Neue Haas Display';src:url(/assets/fonts/nhd-700.woff2) format('woff2');font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:'Neue Haas Display';src:url(/assets/fonts/nhd-800.woff2) format('woff2');font-weight:800;font-style:normal;font-display:swap}
+@font-face{font-family:'Newake';src:url(/assets/fonts/NewakeFont-Demo.otf) format('opentype');font-weight:400;font-style:normal;font-display:swap}
+
+:root{
+  --pink:#E2006B; --pink-b:#FF2C86; --violet-b:#8F2BFF; --creme:#FFE4CB;
+  --texte:rgba(255,255,255,.88);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:#000; color:var(--texte);
+  font-family:'Neue Haas Display',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-weight:500; font-size:15px; line-height:1.8;
+  -webkit-font-smoothing:antialiased;
+}
+/* La meme lueur violette que les sections du site, pour que la page n'ait
+   pas l'air d'appartenir a un autre projet. */
+body::before{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:radial-gradient(46% 40% at 50% 0%, rgba(143,43,255,.10) 0%, rgba(0,0,0,0) 70%);
+}
+.page{position:relative; z-index:1; width:820px; max-width:100%; margin:0 auto; padding:0 26px 110px}
+
+header.tete{padding:46px 0 0}
+.retour{
+  display:inline-flex; align-items:center; gap:9px;
+  font-size:11px; letter-spacing:1.6px; text-transform:uppercase;
+  color:rgba(255,255,255,.5); text-decoration:none;
+  transition:color .25s ease;
+}
+.retour:hover{color:#fff}
+.retour span{font-size:13px; line-height:1}
+
+.chapitre{
+  display:flex; align-items:center; gap:20px; margin:64px 0 22px;
+}
+.chapitre b{font-size:11px; font-weight:700; letter-spacing:2.6px; color:var(--pink-b)}
+.chapitre i{flex:1; height:1px; background:rgba(255,255,255,.16)}
+
+h1{
+  font-family:'Newake','Neue Haas Display',sans-serif; font-weight:400;
+  font-size:clamp(38px,7vw,64px); line-height:1.02; letter-spacing:1.5px;
+  margin:0 0 14px; color:#fff;
+  /* Newake pose ses accents au ras de la boite de ligne : meme correction
+     que sur le h1 du hero, la boite grandit vers le haut sans rien deplacer. */
+  padding-top:.14em; margin-top:-.14em;
+}
+.maj{font-size:12px; letter-spacing:1.4px; text-transform:uppercase; color:var(--creme); opacity:.75; margin:0}
+
+h2{
+  font-family:'Neue Haas Display',sans-serif; font-weight:800;
+  font-size:19px; line-height:1.3; letter-spacing:.2px;
+  margin:52px 0 14px; color:#fff;
+}
+h2 em{font-style:normal; color:var(--pink-b); margin-right:12px; font-weight:700}
+
+p{margin:0 0 15px}
+p:last-child{margin-bottom:0}
+a{color:#fff; text-decoration:none; border-bottom:1px solid rgba(255,44,134,.55); transition:border-color .25s ease,color .25s ease}
+a:hover{color:var(--pink-b); border-bottom-color:var(--pink-b)}
+
+/* Le bloc d'identification : une fiche, pas un paragraphe. Une suite de
+   lignes « libelle / valeur » se lit d'un coup d'oeil, ce qu'un pave de
+   texte ne permet pas — et c'est exactement l'usage d'une mention legale. */
+dl.fiche{
+  margin:0; padding:26px 30px;
+  border:1px solid rgba(255,255,255,.09); border-radius:6px;
+  background:linear-gradient(150deg,#150E1E 0%,#0A0910 55%,#120C1A 100%);
+  display:grid; grid-template-columns:auto 1fr; gap:11px 26px;
+}
+dl.fiche dt{font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:rgba(255,255,255,.42); line-height:1.9}
+dl.fiche dd{margin:0; line-height:1.9}
+dl.fiche dd b{font-weight:700}
+
+/* Ce qui reste a completer est signale, pas dissimule : une mention legale
+   incomplete engage la responsabilite de l'editeur. */
+.acompleter{
+  display:inline-block; padding:1px 9px; border-radius:3px;
+  background:rgba(255,44,134,.14); border:1px solid rgba(255,44,134,.4);
+  color:var(--pink-b); font-size:12px; letter-spacing:.6px;
+}
+
+footer.pied{
+  margin-top:76px; padding-top:26px; border-top:1px solid rgba(255,255,255,.07);
+  display:flex; flex-wrap:wrap; gap:8px 18px; justify-content:space-between;
+  font-size:12px; color:#6A6C71;
+}
+footer.pied a{border-bottom-color:rgba(255,255,255,.18)}
+
+@media (max-width:640px){
+  .page{padding:0 20px 80px}
+  dl.fiche{grid-template-columns:1fr; gap:2px; padding:22px}
+  dl.fiche dt{margin-top:12px}
+  dl.fiche dt:first-child{margin-top:0}
+  h2{font-size:17px; margin:40px 0 12px}
+}
