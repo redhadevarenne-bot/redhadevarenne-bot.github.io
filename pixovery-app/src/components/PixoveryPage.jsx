@@ -317,6 +317,13 @@ export default class PixoveryPage extends React.Component {
        jamais liberees. Le pic tient donc autour de 170 Mo de bitmaps. C'est
        le point a surveiller si le site se met a saccader ou a recharger tout
        seul sur un telephone d'entree de gamme. */
+    /* Lu une fois, pas a chaque image : matchMedia dans cadence() serait une
+       interrogation de style par frame. Le seuil est le MEME que `tactile`
+       dans services() et que `LEGER` en haut du fichier. */
+    let petit = !!(window.matchMedia && window.matchMedia('(max-width:768px)').matches);
+    this.on(window, 'resize', () => {
+      petit = !!(window.matchMedia && window.matchMedia('(max-width:768px)').matches);
+    });
     const cx = cv.getContext('2d');
     if(!cx) return;
     /* Le canvas reste plus petit que sa taille d'affichage : autant demander
@@ -554,8 +561,20 @@ export default class PixoveryPage extends React.Component {
          Le plafond a 2600 px sert aux ecrans bas ou aux rails tres longs :
          au-dela, le tour se termine avant la sortie et le blister tient sa
          face en s'en allant. */
-      const traversee = Math.min(vh + rr.height, 2600);
-      const pv = Math.max(0, Math.min(1, (vh - rr.top) / traversee));
+      /* TELEPHONE : ON MESURE SUR LA FIGURINE, PAS SUR LE RAIL (28/08).
+         Sous 768 px, [data-tour] n'est plus colle : le CSS le remet dans le
+         flux normal, centre, a la suite des quatre etapes. Sa course n'a
+         donc plus rien a voir avec celle du rail — le rail fait plusieurs
+         ecrans de haut et la figurine n'apparait qu'a la toute fin.
+         Mesurer sur le rail faisait DEMARRER la rotation bien avant qu'on
+         voie quoi que ce soit, et la FINIR longtemps apres que le blister
+         soit sorti du champ : on n'en voyait qu'une tranche du milieu.
+         Sur sa propre boite, la mesure retrouve son sens d'origine — il
+         entre par le bas a pv=0, se presente de face au centre de l'ecran a
+         pv=0,5, et repart par le haut a pv=1. */
+      const boite = petit ? tour.getBoundingClientRect() : rr;
+      const traversee = Math.min(vh + boite.height, 2600);
+      const pv = Math.max(0, Math.min(1, (vh - boite.top) / traversee));
       /* SENS INVERSE, ET LA FACE AU MILIEU DE LA TRAVERSEE.
          La version precedente posait la face aux DEUX extremites : le
          blister arrivait de face en bas de l'ecran et repartait de face en

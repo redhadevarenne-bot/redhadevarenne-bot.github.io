@@ -1087,10 +1087,28 @@ footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.
        lui : derriere un fond opaque il ne floute plus rien, il ne faisait
        que couter une passe de composition a chaque ouverture. */
     background:#000;
-    opacity:0; visibility:hidden;
-    transition:opacity .34s ease, visibility .34s;
+    /* --- OUVERTURE EN RIDEAU, DE HAUT EN BAS (28/08) -------------------
+       Avant : un simple fondu d'opacite en 0,34 s. Un fondu n'a pas de
+       direction — le panneau ne s'ouvrait pas, il APPARAISSAIT. A pleine
+       taille, sur toute la page, ca se lit comme un a-coup.
+       Maintenant c'est un rideau qui descend : `clip-path` masque le
+       panneau par le bas (`inset(0 0 100% 0)` = tout est coupe) et se
+       retire vers le bas. Le panneau est deja opaque et deja en place, on
+       ne fait que decouvrir sa hauteur.
+       Pourquoi clip-path et pas une hauteur animee : animer `height`
+       relance la mise en page a chaque image, et le contenu centre
+       remonterait pendant l'ouverture. clip-path ne touche ni a la
+       geometrie ni au flux — c'est du compositing pur, donc fluide.
+       0,52 s avec la courbe du site (.16,1,.3,1) : elle part vite et se
+       pose sans marche. En dessous de ~0,45 s le geste redevient sec.
+       `visibility` garde la meme duree : sans ca le panneau redeviendrait
+       cliquable ou invisible avant la fin du rideau. */
+    opacity:1;
+    visibility:hidden;
+    clip-path:inset(0 0 100% 0);
+    transition:clip-path .52s cubic-bezier(.16,1,.3,1), visibility .52s;
   }
-  .menu-ouvert [data-nav]{opacity:1; visibility:visible}
+  .menu-ouvert [data-nav]{visibility:visible; clip-path:inset(0 0 0 0)}
 
   /* Le header se masque tout seul au défilement. Panneau ouvert, il doit
      rester : sinon le bouton de fermeture part avec lui. */
@@ -1142,11 +1160,15 @@ footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.
      Seule l'epaisseur est reprise : sous une typographie de 40 px, 1 px
      passe pour une eraflure. */
   [data-nav] a i{height:2px !important}
-  .menu-ouvert [data-nav] a:nth-child(1){transition-delay:.06s}
-  .menu-ouvert [data-nav] a:nth-child(2){transition-delay:.11s}
-  .menu-ouvert [data-nav] a:nth-child(3){transition-delay:.16s}
-  .menu-ouvert [data-nav] a:nth-child(4){transition-delay:.21s}
-  .menu-ouvert [data-nav] a:nth-child(5){transition-delay:.26s}
+  /* Les entrees montent DERRIERE le rideau, pas devant : chaque delai est
+     decale pour que le mot arrive juste apres que le rideau a decouvert sa
+     ligne. Cales sur les 0,52 s de l'ouverture — si tu changes la duree du
+     rideau, redecale ces cinq valeurs. */
+  .menu-ouvert [data-nav] a:nth-child(1){transition-delay:.14s}
+  .menu-ouvert [data-nav] a:nth-child(2){transition-delay:.20s}
+  .menu-ouvert [data-nav] a:nth-child(3){transition-delay:.26s}
+  .menu-ouvert [data-nav] a:nth-child(4){transition-delay:.32s}
+  .menu-ouvert [data-nav] a:nth-child(5){transition-delay:.38s}
   /* le soulignement rose d'origine : à cette taille il devient une règle */
   [data-nav] a i{bottom:6px !important; height:2px !important; transform-origin:left !important}
 }
@@ -1155,6 +1177,10 @@ footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.
 @media (max-width:768px) and (prefers-reduced-motion:reduce){
   [data-nav] a{transform:none; transition:opacity .2s linear}
   [data-burger] i{transition:none}
+  /* le rideau redevient un fondu court : on garde l'ouverture, on retire
+     le mouvement */
+  [data-nav]{clip-path:none; opacity:0; transition:opacity .2s linear, visibility .2s}
+  .menu-ouvert [data-nav]{opacity:1}
 }
 
 /* --------------------------------------------------------------------------
@@ -1239,7 +1265,7 @@ footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.
 
 
 /* --------------------------------------------------------------------------
-   9. LE TITRE DU HERO EN NEWAKE (essai du 24/08)
+   9. LA TYPOGRAPHIE D'AFFICHAGE (Newake 24/08 -> MONTSERRAT 28/08)
 
    Newake n'a QU'UNE graisse : le font-weight:800 pose en ligne dans le JSX
    ferait fabriquer un gras de synthese par le navigateur — des contours
@@ -1254,39 +1280,65 @@ footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.
    essaye sur les gros titres puis abandonne : il ne survit que sur les
    petits textes, bloc 10.
    -------------------------------------------------------------------------- */
-/* --- 28/08 : POPPINS ESSAYEE PUIS ECARTEE ----------------------------
-   Poppins a ete posee ici a la place de Newake pour regler la question de
-   licence (le fichier charge est `NewakeFont-Demo.otf`, la version DEMO,
-   gratuite pour un usage PERSONNEL seulement — pas pour un site qui vend des
-   prestations). Rendu refuse par Redha : Poppins est geometrique et ronde la
-   ou Newake est condensee et anguleuse, le titre perdait son caractere.
-   Newake est donc remise, et LA QUESTION DE LICENCE RESTE OUVERTE : soit
-   acheter la licence web de Newake (une trentaine d'euros), soit trouver une
-   condensee libre du meme genre. Ne pas oublier ce point avant de faire du
-   site une vitrine commerciale.
-   Si tu retentes une substitution un jour : Poppins demandait graisse 800
-   (Newake n'en a qu'une, d'ou le 400), interlettrage 0,4 u au lieu de 1,5,
-   et la suppression des corrections d'accents en .14em. */
-@font-face{
-  font-family:'Newake';
-  src:url(/assets/fonts/NewakeFont-Demo.otf) format('opentype');
-  font-weight:400;font-style:normal;font-display:swap;
-}
+/* --- 28/08 : NEWAKE REMPLACEE PAR MONTSERRAT -------------------------
+   Le fichier charge etait `NewakeFont-Demo.otf` — la version DEMO, gratuite
+   pour un usage PERSONNEL seulement. Sur un site qui vend des prestations,
+   ce n'est pas couvert. Decision de Redha : on change de police plutot que
+   d'acheter la licence.
+
+   Poppins a ete essayee d'abord et ecartee : trop geometrique, trop ronde,
+   le titre perdait son caractere. Montserrat est retenue — meme famille
+   (sans-serif geometrique, licence SIL Open Font, libre pour le commerce)
+   mais des capitales plus carrees et plus denses, plus proches de l'esprit
+   d'affiche de Newake.
+
+   TROIS REGLAGES ONT DU SUIVRE, et il faut comprendre pourquoi :
+
+   1. GRAISSE 800 au lieu de 400. Le 400 n'etait pas un choix esthetique :
+      Newake n'a QU'UNE graisse, et demander un gras au navigateur lui
+      faisait fabriquer un faux-gras baveux. Montserrat a de vraies graisses,
+      on prend donc la vraie 800.
+
+   2. INTERLETTRAGE A ZERO au lieu de 1,5 u. Newake est une condensee : ses
+      capitales sont etroites et serrees, il fallait les ecarter. Montserrat
+      est large, l'ecartement en plus ferait exploser la ligne.
+
+   3. TAILLE DU H1 : 76 u -> 62 u sur ordinateur. C'EST LE REGLAGE CRITIQUE.
+      Newake est condensee, Montserrat ne l'est pas : a taille egale, une
+      capitale de Montserrat prend environ 40 % de largeur en plus. La
+      colonne du hero fait 398 u ; « DECOLLER », huit capitales, y tenait en
+      Newake et n'y tiendrait PAS en Montserrat a 76 u — il serait rogne par
+      l'`overflow:hidden` du masque de ligne, qui ne peut pas etre ouvert
+      (c'est lui qui cache les lettres avant leur chute).
+      Mesure : ~0,72 em par capitale en Montserrat 800, soit 5,76 em pour
+      « DECOLLER ». A 62 u -> 357 u, dans une colonne de 398 u. Ca passe.
+      SI TU CHANGES L'UN, RECALCULE L'AUTRE.
+
+   4. Les corrections d'accents en .14em sautent : Montserrat pose ses
+      accents a hauteur normale, contrairement a Newake qui les collait au
+      ras de la boite de ligne. Les garder creuserait un trou au-dessus du
+      titre. (Le padding de .16em sur `#accueil h1 > span`, lui, RESTE : il
+      ouvre le masque vers le haut sans rien deplacer, et il protege l'accent
+      de « DECOLLER » quelle que soit la police.)
+
+   Le fichier `NewakeFont-Demo.otf` n'est plus charge par personne. Il reste
+   dans /assets/fonts, a supprimer une fois la decision confirmee. */
 #accueil h1,
 #services h2, #portfolio h2, #processus h2, #apropos h2, #contact h2{
-  font-family:'Newake','Neue Haas Display',sans-serif !important;
-  /* Newake n'a qu'une graisse. Laisser le 700/800 des titres de section
-     ferait fabriquer un gras de synthese, epaissi a la va-vite. */
-  font-weight:400 !important;
-  letter-spacing:calc(1.5*var(--u)) !important;
+  font-family:'Montserrat','Barlow',system-ui,sans-serif !important;
+  font-weight:800 !important;
+  letter-spacing:0 !important;
 }
 /* La TAILLE, elle, ne vaut que sur ordinateur. Ce bloc est en fin de
    fichier : sans ce garde-fou il passerait devant la regle mobile du bloc
    @media (max-width:768px), et le titre deborderait sur telephone. */
 @media (min-width:769px){
   #accueil h1{
-    font-size:calc(76*var(--tu)) !important;
-    line-height:calc(70*var(--tu)) !important;
+    /* 62 et non 76 : voir le point 3 du bloc « Montserrat » ci-dessus.
+       Montserrat est ~40 % plus large que Newake a taille egale, et
+       « DECOLLER » doit tenir dans les 398 u de la colonne. */
+    font-size:calc(62*var(--tu)) !important;
+    line-height:calc(58*var(--tu)) !important;
   }
   /* la colonne du texte suivait le corps de 67 u : elle etait devenue trop
      etroite pour « DECOLLER » a 84 u */
@@ -1520,16 +1572,17 @@ footer, footer a, small{
 [data-lbton="pink"] [data-lbmeta2]{color:var(--pink-b)}
 [data-lbpanel] [data-lbtitle2]{
   /* meme fonte que les titres de section : la fiche appartient a la page */
-  font-family:'Newake','Neue Haas Display',sans-serif;
-  font-weight:400;
-  font-size:calc(44*var(--tu));
-  line-height:1.02;
-  letter-spacing:calc(1.2*var(--u));
+  font-family:'Montserrat','Barlow',system-ui,sans-serif;
+  font-weight:800;
+  /* 38 et non 44 : Montserrat est plus large, et le panneau ne fait que
+     42 % de la fiche. */
+  font-size:calc(38*var(--tu));
+  line-height:1.08;
+  letter-spacing:calc(-.2*var(--u));
   color:#fff;
+  /* Montserrat pose ses accents a hauteur normale : la correction en .14em
+     qui compensait Newake creusait un trou au-dessus du titre. Retiree. */
   margin:calc(12*var(--u)) 0 0;
-  /* Newake pose ses accents au ras de la boite de ligne : meme correction
-     que sur le h1 du hero. */
-  padding-top:.14em;margin-top:calc(12*var(--u) - .14em);
 }
 [data-lbpanel] [data-lbrule]{
   display:block;width:calc(46*var(--u));height:2px;
