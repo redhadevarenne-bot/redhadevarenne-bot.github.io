@@ -184,10 +184,27 @@ export default class PixoveryPage extends React.Component {
         la section.
      --------------------------------------------------------------------- */
   smoothScroll(){
-    const force   = /[?&]motion=full/.test(window.location.search);
-    const reduced = !force && window.matchMedia
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if(reduced) return;                     // scroll natif, franc, assume
+    /* --- LENIS TOURNE POUR TOUT LE MONDE (28/08, decision de Redha) -----
+       Avant : si « reduire les animations » etait actif dans le systeme, on
+       sortait ici et le defilement redevenait natif. Erreur de raisonnement,
+       decrite en detail pres de la constante REDUIT plus haut : couper Lenis
+       ne reduit pas le mouvement, ca en retire le LISSAGE. Toutes les
+       animations du site sont calees sur la position de scroll ; sur un
+       scroll natif qui avance par bonds de 100 px, elles avancent par bonds
+       elles aussi. Resultat : « pixovery.com est une horreur » alors que la
+       meme page en ?motion=full etait parfaitement fluide.
+
+       La reponse conforme aux standards aurait ete de figer les animations
+       decoratives (blister immobile, titre pose d'emblee, pas de parallaxe).
+       Elle a ete implementee, montree a Redha, et ECARTEE : le site EST son
+       animation, un site fige ne le represente pas.
+
+       On assume donc : Lenis tourne toujours. Ce que ca coute a savoir, si
+       la question se repose un jour — une personne qui a active ce reglage
+       pour raison medicale (troubles vestibulaires) recevra quand meme le
+       defilement lisse et les animations au scroll. C'est un arbitrage
+       delibere, pas un oubli. */
+    const force = /[?&]motion=full/.test(window.location.search);
 
     const lenis = new Lenis({
       /* duree du rattrapage apres un cran de molette. 1.05 s : assez
@@ -703,10 +720,7 @@ export default class PixoveryPage extends React.Component {
       const au = Math.abs(u);
       const s2 = Math.max(0, (au - PALIER) / (1 - PALIER));
       const e2 = s2 * s2 * (3 - 2 * s2);
-      /* Mode reduit : la pose 0 est le packshot de face. On la garde, et
-         draw() sort immediatement puisque l'image ne change pas — plus un
-         seul drawImage pendant le defilement. */
-      const pose = REDUIT ? 0 : (((u < 0 ? -1 : 1) * e2 * (N / 2)) + N) % N;
+      const pose = (((u < 0 ? -1 : 1) * e2 * (N / 2)) + N) % N;
       draw(pose, reduce ? 1 : ZOOM0 + (1 - ZOOM0) * ze);
       /* Fondu a l'entree uniquement. Il y avait aussi une sortie — la
          figurine s'effacait sur les 16 derniers pourcents de la section —
@@ -2488,10 +2502,7 @@ export default class PixoveryPage extends React.Component {
        (« une fois montre, ca reste montre »).
        Pour revenir au comportement reversible : supprimer `paMax` et rendre
        `pa` egal a `brut`. */
-    /* Mode reduit : on part a 1, donc la premiere passe pose le titre dans
-       son etat final et l'arret definitif se declenche aussitot. Aucune
-       lettre n'est plus touchee ensuite. */
-    let paMax = REDUIT ? 1 : 0, pose = false;
+    let paMax = 0, pose = false;
     const poseLettres = () => {
       const brut = Math.min(1, Math.max(0, (window.scrollY || 0) / courseTitre()));
       if(brut > paMax) paMax = brut;
@@ -3517,10 +3528,7 @@ export default class PixoveryPage extends React.Component {
         const d = (vh*.85 - r.top) / (vh*.45);
         steps.style.setProperty('--draw', Math.max(0, Math.min(1, d)).toFixed(3));
       }
-      /* Mode reduit : aucune parallaxe. C'est le poste le plus cher de cette
-         fonction — un getBoundingClientRect et une ecriture de variable CSS
-         par element, a chaque image de defilement. */
-      if(!REDUIT) floaters.forEach(el => {
+      floaters.forEach(el => {
         const b = el.getBoundingClientRect();
         if(b.bottom < -200 || b.top > vh + 200) return;
         const c = (b.top + b.height/2 - vh/2) / vh;
