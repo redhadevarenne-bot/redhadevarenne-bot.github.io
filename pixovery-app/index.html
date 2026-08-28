@@ -575,7 +575,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Montserrat:wght@800;900&family=Poppins:wght@700&family=VT323&display=swap" rel="stylesheet">
 
 <!-- Prechargement de l'image du hero, comme aujourd'hui. -->
-<link rel="preload" as="image" href="/assets/hero-cut-a.webp" fetchpriority="high">
+<!-- 28/08 : le prechargement visait hero-cut-a.webp, qui n'est plus affiche
+     nulle part depuis que le hero est passe au canvas + pot-solide.webp. On
+     telechargeait donc 144 Ko en PRIORITE HAUTE, pour rien, au moment precis
+     ou le navigateur a besoin de sa bande passante pour la vraie image du
+     hero. Corrige : on precharge ce qui est reellement affiche. -->
+<link rel="preload" as="image" href="/assets/pot-solide.webp" fetchpriority="high">
 
 </head>
 <body>

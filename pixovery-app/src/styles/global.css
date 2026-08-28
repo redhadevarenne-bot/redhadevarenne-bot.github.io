@@ -1150,32 +1150,32 @@ footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.
     padding-block:clamp(10px, 1.8vh, 18px) !important;
     min-height:0 !important;
     white-space:nowrap;
-    /* chaque entrée monte à son tour quand le panneau s'ouvre */
-    opacity:0; transform:translateY(14px);
-    transition:opacity .4s ease, transform .5s cubic-bezier(.16,1,.3,1), color .25s ease;
+    /* --- LES ENTREES NE S'ANIMENT PLUS. C'EST LE POINT (28/08). -------
+       Elles montaient une par une, avec des delais echelonnes. Combine au
+       rideau, ca faisait DEUX mouvements successifs : le rideau descendait
+       en 0,52 s, puis les mots arrivaient jusqu'a 0,88 s. On lisait deux
+       temps, et le second se lisait comme un a-coup.
+       Un rideau qui decouvre un contenu DEJA EN PLACE, c'est deja
+       l'animation — le mouvement, c'est le rideau. Ajouter une seconde
+       animation sur ce qu'il vient de decouvrir, c'est animer deux fois la
+       meme chose. On retire donc tout : les entrees sont posees, opaques,
+       immobiles, et le rideau les revele.
+       Ne remets pas d'`opacity:0` ni de `transform` ici sans retirer le
+       rideau d'abord : les deux ne peuvent pas coexister. */
+    opacity:1; transform:none;
+    transition:color .25s ease;
   }
-  .menu-ouvert [data-nav] a{opacity:1; transform:none}
 
   /* Le trait suit maintenant la largeur du mot (voir width:auto ci-dessus).
      Seule l'epaisseur est reprise : sous une typographie de 40 px, 1 px
      passe pour une eraflure. */
   [data-nav] a i{height:2px !important}
-  /* Les entrees montent DERRIERE le rideau, pas devant : chaque delai est
-     decale pour que le mot arrive juste apres que le rideau a decouvert sa
-     ligne. Cales sur les 0,52 s de l'ouverture — si tu changes la duree du
-     rideau, redecale ces cinq valeurs. */
-  .menu-ouvert [data-nav] a:nth-child(1){transition-delay:.14s}
-  .menu-ouvert [data-nav] a:nth-child(2){transition-delay:.20s}
-  .menu-ouvert [data-nav] a:nth-child(3){transition-delay:.26s}
-  .menu-ouvert [data-nav] a:nth-child(4){transition-delay:.32s}
-  .menu-ouvert [data-nav] a:nth-child(5){transition-delay:.38s}
   /* le soulignement rose d'origine : à cette taille il devient une règle */
   [data-nav] a i{bottom:6px !important; height:2px !important; transform-origin:left !important}
 }
 
 /* « Réduire les animations » : on garde l'ouverture, on retire le mouvement. */
 @media (max-width:768px) and (prefers-reduced-motion:reduce){
-  [data-nav] a{transform:none; transition:opacity .2s linear}
   [data-burger] i{transition:none}
   /* le rideau redevient un fondu court : on garde l'ouverture, on retire
      le mouvement */
