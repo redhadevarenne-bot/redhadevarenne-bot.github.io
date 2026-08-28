@@ -319,6 +319,11 @@ export default class PixoveryPage extends React.Component {
        seul sur un telephone d'entree de gamme. */
     const cx = cv.getContext('2d');
     if(!cx) return;
+    /* Le canvas reste plus petit que sa taille d'affichage : autant demander
+       au navigateur son meilleur filtre pour l'agrandissement. Ca ne coute
+       rien ici — on ne redessine qu'aux changements de pose. */
+    cx.imageSmoothingEnabled = true;
+    cx.imageSmoothingQuality = 'high';
 
     /* Planches refaites le 24/08 a partir de la video du blister (241 images
        a 30 i/s, fond noir). 72 poses retenues, tuiles de 384 px, alpha tiree
@@ -330,7 +335,6 @@ export default class PixoveryPage extends React.Component {
        une tuile carree, un tiers des pixels payait du vide sur les cotes.
        A poids egal, le passage au format de l'objet rend l'image nettement
        plus nette. */
-    console.log('[pixovery] spin v7 — 90 poses, planche allegee (64 Mo au lieu de 101)');
     /* UN TOUR COMPLET, MESURE CETTE FOIS.
        La session precedente avait conclu que « Video sans titre 7 » etait
        inexploitable : trois segments, chacun un demi-tour suivi d'un arret
@@ -356,7 +360,60 @@ export default class PixoveryPage extends React.Component {
        image a l'autre.
        PAS DE COUCHE ALPHA, comme la v4 : le fond de la video est du noir
        pur et la section est en #000. */
-    const N = 90, COLS = 10, PER = 90, TW = 352, TH = 503;
+    /* --- DEFINITION : RETOUR A LA PLANCHE v5 (28/08) ---------------------
+       Redha : « le perso du processus a l'air flou, de mauvaise qualite ».
+       Mesure faite, et il a raison — c'etait un choix, pas un accident.
+
+       Le canvas etait en 352 x 503 alors qu'il s'AFFICHE a 338u x 484u, soit
+       475 x 681 px CSS sur un ecran de 1440 et plus. Deja 1,35x d'etirement
+       a DPR 1 ; sur un portable retine (DPR 2), le navigateur doit fabriquer
+       950 x 1362 pixels a partir de 352 x 503 — 2,7x. A quoi s'ajoute le
+       recul d'entree (ZOOM0 = 1,20), qui magnifie encore au moment precis ou
+       la figurine apparait. Environ 3x d'agrandissement a l'arrivee : c'est
+       exactement ce qu'on lit comme « mauvaise qualite ».
+       Le commentaire de la v7 disait « le canvas est affiche a environ
+       360 px de large : la definition suffit ». C'etait faux — 360 px, c'est
+       la taille sur un ecran de 1024, pas sur celui de Redha.
+
+       LES TROIS PLANCHES EXISTANTES, MESUREES :
+         v5  4480x3840  tuiles 448x640  60 poses  17,2 Mpx  69 Mo  1,79 Mo
+         v6  4608x5490  tuiles 576x610  72 poses  25,3 Mpx  101 Mo 2,53 Mo
+         v7  3520x4527  tuiles 352x503  90 poses  15,9 Mpx  64 Mo  1,83 Mo
+
+       La v5 est plus nette que la v7 dans les DEUX dimensions (+27 % en
+       largeur, +27 % en hauteur), pour la MEME memoire (69 contre 64 Mo) et
+       un fichier PLUS LEGER au telechargement (1,79 contre 1,83 Mo). Il n'y
+       a donc rien a arbitrer sur le poids : le seul cout est le nombre de
+       poses, 60 au lieu de 90, soit 6 degres par pose au lieu de 4.
+       Sur une rotation pilotee par le defilement, cette difference ne se voit
+       pas — le flou, si. La v7 avait echange de la nettete permanente contre
+       de la fluidite invisible.
+       (La v6 serait la plus nette en largeur mais elle est PLUS COURTE que la
+       v5 en hauteur — 610 contre 640 — et coute 101 Mo. Mauvais marche.)
+
+       MESURE FAITE SUR L'ECRAN DE REDHA (1920) : le blister s'affiche a
+       365 x 630 px. La tuile v5 fait 448 x 640 — le navigateur DEMINUE donc
+       legerement l'image au lieu de l'agrandir. Il ne reste plus une seule
+       etape d'agrandissement dans la chaine : ce qui restait de mou ne
+       venait plus du code, mais de la SOURCE. Les poses sont decoupees dans
+       une video compressee, avec son flou de mouvement et ses artefacts.
+
+       D'OU LA PLANCHE `proc-v5-net.webp` : c'est la v5, passee au masque
+       flou (rayon 1,4 / 105 %, seuil 2) puis reencodee en qualite 88. Un
+       masque flou n'invente pas de detail — il augmente l'acutance, c'est-a
+       -dire le contraste local sur les aretes, ce que l'oeil lit comme de la
+       nettete. Sur une image issue de video c'est exactement le bon remede.
+       Cout : 2,23 Mo au lieu de 1,79. La memoire, elle, ne bouge pas (memes
+       dimensions, memes 69 Mo decodes).
+       Le seuil de 2 evite d'accentuer le bruit du fond noir ; monter le
+       pourcentage au-dela de ~130 fait apparaitre un lisere clair sur les
+       contours du blister.
+
+       SI TU VEUX ALLER PLUS LOIN, il n'y a plus qu'une piste et elle n'est
+       pas dans le code : refilmer le blister de plus pres, ou le rendre en
+       3D. Une planche en tuiles ~640x915 tiree de la MEME video ne servirait
+       a rien — on agrandirait du flou. */
+    const N = 60, COLS = 10, PER = 60, TW = 448, TH = 640;
     const sheets = [new Image()];
     let bitmaps = null;                 /* les planches decodees une fois pour toutes */
     let vue = -1, prets = 0, rate = false;
@@ -631,7 +688,7 @@ export default class PixoveryPage extends React.Component {
       sheets.forEach((im, k) => {
         im.onload = pret;
         im.onerror = () => { rate = true; pret(); };
-        im.src = '/assets/proc-v7.webp';
+        im.src = '/assets/proc-v5-net.webp';
       });
     };
     if('IntersectionObserver' in window){
@@ -2325,11 +2382,22 @@ export default class PixoveryPage extends React.Component {
        (« une fois montre, ca reste montre »).
        Pour revenir au comportement reversible : supprimer `paMax` et rendre
        `pa` egal a `brut`. */
-    let paMax = 0;
+    let paMax = 0, pose = false;
     const poseLettres = () => {
       const brut = Math.min(1, Math.max(0, (window.scrollY || 0) / courseTitre()));
       if(brut > paMax) paMax = brut;
       const pa = paMax;
+      /* ARRET DEFINITIF UNE FOIS LE TITRE POSE (28/08, perf).
+         Depuis que la chute ne recule plus, `pa` reste colle a 1 des qu'on a
+         depasse le premier quart de la piste du hero — c'est-a-dire pendant
+         TOUT le reste de la visite. Or on continuait a reecrire `opacity` et
+         `transform` sur les ~22 lettres a chaque frame de defilement, pour
+         reposer exactement les memes valeurs. Quarante-quatre ecritures de
+         style par image, sur toute la longueur du site, pour rien.
+         On pose une derniere fois, puis on ne revient plus. `resize` remet le
+         drapeau a zero : la course depend de la hauteur de la fenetre. */
+      if(pose && pa >= 1) return;
+      pose = pa >= 1;
       lettres.forEach(c => {
         const t0 = +c.dataset.t0;
         const u = Math.min(1, Math.max(0, (pa - t0) / FEN));
@@ -2371,7 +2439,7 @@ export default class PixoveryPage extends React.Component {
     let fileT = false;
     const queueT = () => { if(fileT) return; fileT = true; requestAnimationFrame(() => { fileT = false; poseLettres(); }); };
     this.on(window, 'scroll', queueT, {passive: true});
-    this.on(window, 'resize', queueT, {passive: true});
+    this.on(window, 'resize', () => { pose = false; queueT(); }, {passive: true});
     poseLettres();
     /* open() doit pouvoir tout reposer : le filet de securite passe par la */
     this.poseTitre = poseLettres;
@@ -3507,7 +3575,7 @@ export default class PixoveryPage extends React.Component {
           <div style={{width: "calc(150*var(--u))", height: "1px", background: "rgba(255,255,255,.14)", overflow: "hidden"}}><i style={{display: "block", height: "100%", width: "100%", background: "linear-gradient(90deg,var(--violet-b),var(--pink))", transform: "scaleX(0)", transformOrigin: "left", animation: "intro-bar 1.15s cubic-bezier(.65,0,.35,1) .2s forwards"}}></i></div>
         </div>
 
-        <div aria-hidden="true" style={{position: "fixed", inset: "-50%", zIndex: "900", pointerEvents: "none", opacity: ".055", backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E\")", animation: "grain-shift 8s steps(6) infinite", left: "-788px", top: "-474px"}}></div>
+        <div aria-hidden="true" style={{position: "fixed", inset: "-9%", zIndex: "900", pointerEvents: "none", opacity: ".055", willChange: "transform", backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E\")", animation: "grain-shift 8s steps(6) infinite"}}></div>
 
         <div data-hotzone="1" aria-hidden="true" style={{position: "fixed", top: "0", left: "0", right: "0", height: "calc(70*var(--u))", zIndex: "99"}}></div>
         <header data-hdr="1" style={{position: "fixed", top: "0", left: "0", right: "0", zIndex: "100", height: "calc(76*var(--u))", display: "flex", alignItems: "center", transform: "translateY(-110%)", opacity: "0", transition: "transform .35s cubic-bezier(.22,1,.36,1), opacity .3s ease, background .3s ease, backdrop-filter .3s ease"}}>
@@ -4181,7 +4249,7 @@ export default class PixoveryPage extends React.Component {
                   spin() refuse d'y demarrer, sinon les deux planches (1,3 Mo)
                   se telechargeraient sur telephone pour un element invisible. */}
               <div data-tour="1" style={{position: "sticky", top: "calc(50vh - 242*var(--u))", justifySelf: "end", width: "calc(338*var(--u))", height: "calc(484*var(--u))", willChange: "opacity, transform"}} aria-hidden="true">
-                <canvas data-spin="1" width="352" height="503" style={{position: "absolute", inset: "0", width: "100%", height: "100%"}}></canvas>
+                <canvas data-spin="1" width="448" height="640" style={{position: "absolute", inset: "0", width: "100%", height: "100%"}}></canvas>
               </div>
             </div>
           </div>

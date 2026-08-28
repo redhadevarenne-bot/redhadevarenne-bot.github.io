@@ -1420,6 +1420,28 @@ footer, footer a, small{
 [data-cue] circle{fill:#FF2C86 !important}
 
 
+/* --------------------------------------------------------------------------
+   LE RAIL DES SERVICES NE SE PRE-REND PLUS D'UN BLOC — 28/08
+
+   Retire d'abord sur telephone (le « 02 » qui n'arrivait qu'au deuxieme
+   passage), etendu ensuite a TOUS les ecrans : le raisonnement est le meme,
+   seule l'echelle change. [data-svcrail] fait 400 vw x 100 vh. Sur un ecran
+   de 1920, ca fait 7680 x 1080 pixels, soit ~33 Mo de couche composee tenue
+   en permanence, pour une barre dont on ne voit jamais qu'un quart.
+
+   `will-change` est une PROMESSE faite au navigateur : « prepare-toi, ceci va
+   bouger ». Sur un petit element c'est gratuit et ca evite un a-coup au
+   demarrage. Sur une surface de cette taille, ca l'oblige a tenir une couche
+   geante et a la rasteriser d'avance — il y consacre de la memoire et du
+   temps qu'il n'a plus pour le reste.
+
+   Le rail continue de bouger en translate3d, donc il reste compose : on ne
+   perd pas l'acceleration materielle. On rend simplement au navigateur le
+   droit de gerer ses tuiles comme il l'entend, c'est-a-dire de ne rasteriser
+   que ce qui est a l'ecran.
+   -------------------------------------------------------------------------- */
+[data-svcrail]{will-change:auto !important}
+
 /* ==========================================================================
    PLEIN ECRAN — FICHE PROJET
    --------------------------------------------------------------------------
@@ -1763,7 +1785,6 @@ footer, footer a, small{
         couches de la taille d'un chiffre, c'est negligeable, et leur
         rasterisation ne depend plus de celle du rail.
      Sur ordinateur, rien ne change : ces deux regles sont sous 768 px. */
-  [data-svcrail]{will-change:auto !important}
   [data-svcnum]{
     transform:translateZ(0);
     backface-visibility:hidden;
