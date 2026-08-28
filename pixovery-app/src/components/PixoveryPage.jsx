@@ -1166,63 +1166,106 @@ export default class PixoveryPage extends React.Component {
     }, {passive: false});
     this.on(window, 'touchend', () => { y0 = null; }, {passive: true});
 
-    /* ===== TACTILE : CALAGE EN QUATRE TEMPS (28/08) =======================
-       Le commentaire de `tactile` en haut de services() explique pourquoi les
-       CRANS ne marchent pas au doigt : ils travaillent PENDANT le geste, et a
-       ce moment-la le navigateur a deja engage son defilement natif, qui
-       ignore preventDefault. Conclusion tiree alors : laisser le doigt libre.
-       Elle reste vraie — on ne touche a rien pendant le geste.
-       Ce qui est ajoute ici travaille APRES : on laisse le doigt et l'inertie
-       faire tout leur travail, on attend le silence, et alors seulement on
-       pose la section sur le service le plus proche. C'est le principe du
-       scroll-snap CSS, en JS parce qu'il faut viser des positions calculees
-       (posDe) et non des elements, et parce qu'un scroll-snap-type sur le
-       document snapperait AUSSI le reste de la page.
+    /* ===== TACTILE : QUATRE CRANS, UN GESTE = UN SERVICE (28/08) ==========
+       Version precedente : on laissait le doigt libre et on recalait apres
+       coup, sur le service le plus proche. Ca posait toujours la section
+       proprement, mais un grand geste traversait deux ou trois services d'un
+       coup — on ne s'ARRETAIT pas sur chacun. C'est ce qui est demande ici.
 
-       Trois garde-fous, tous necessaires :
-       - `doigt` : rien ne bouge tant que le doigt est pose. Caler sous le
-         doigt, c'est se battre avec lui.
-       - `geste` : le calage n'existe que dans les 2 s qui suivent un vrai
-         geste tactile. Sans ca, un clic de menu qui traverse la section, un
-         resize ou une rotation d'ecran declencheraient un recadrage.
-       - `tenue()` : la meme condition que partout ailleurs ici. Si on est en
-         train de sortir de la section, on ne se fait pas retenir.
+       On revient donc aux crans, et il faut savoir pourquoi ils avaient
+       echoue : l'ancien code appelait preventDefault APRES 28 px de
+       glissement. Trop tard — a ce moment-la le navigateur a deja engage son
+       defilement natif pour ce geste, et il ignore le preventDefault de tous
+       les evenements suivants. Le geste etait donc perdu quoi qu'on fasse.
 
-       `behavior:'smooth'` natif, et PAS le tween maison `vers()` : celui-ci
-       ecrit la position frame par frame (ou passe par Lenis avec lock:true),
-       et les deux se battent avec l'inertie native du doigt, qui court encore
-       apres le touchend. Le smooth natif, lui, est annule tout seul par le
-       navigateur des que le doigt revient — c'est exactement ce qu'on veut.
-       Sous « reduire les animations » il devient un saut : degrade, pas
-       casse. */
+       LA CORRECTION TIENT EN UN MOT : ON DECIDE AU PREMIER MOUVEMENT. Des
+       4 px, on tranche une fois pour toutes — soit la section prend le geste
+       et preventDefault part sur CE touchmove-la (le navigateur n'a encore
+       rien engage, il obeit et la page ne bougera pas d'un pixel de tout le
+       geste), soit on le laisse entierement natif. Jamais d'entre-deux, et
+       jamais de decision revisee en cours de route.
+
+       Ce qui suit decoule de ce choix :
+       - `libre` : geste rendu au navigateur. Pose quand on n'est pas dans la
+         section, ou quand on la quitte par un bout (01 vers le haut, 04 vers
+         le bas). Une fois pose, on ne reprend plus la main avant le doigt
+         suivant.
+       - `tire` : un geste = UN cran, comme `avale` pour la molette. Le reste
+         du glissement est absorbe, pas ignore : preventDefault continue, donc
+         la page reste tenue pendant que le service se pose.
+       - `cale()` : le seul cas ou l'inertie peut encore nous deposer entre
+         deux services, c'est l'ENTREE dans la section — l'elan vient d'un
+         geste qu'on n'a pas pris (`libre`), et l'inertie n'est pas un
+         touchmove, elle ne se preventDefault pas. On attend donc le silence
+         et on pose la section sur le service le plus proche. Uniquement dans
+         ce cas : apres un cran, la position est deja juste. */
     if(tactile){
-      let doigt = false, minuteur = null, geste = 0;
+      /* 34 px : un vrai glissement de pouce, pas un frolement. C'est
+         l'equivalent tactile de SEUIL pour la molette. */
+      const SEUIL_T = 34;
+      let yDep = null, decide = false, libre = false, tire = false;
+      let minuteur = null, geste = 0;
       const quand = () => (window.performance && performance.now) ? performance.now() : Date.now();
+      /* Le service le plus proche de la position ACTUELLE. On ne se fie pas a
+         `index` en entrant : on y arrive par un defilement natif, il est donc
+         pratiquement toujours perime. */
+      const rang = () => {
+        const p = (window.scrollY - haut()) / course();
+        return Math.max(0, Math.min(n - 1, Math.round(p * (n - 1))));
+      };
+
       const cale = () => {
         minuteur = null;
-        if(doigt || verrou) return;
+        if(verrou || yDep !== null) return;
         if(!geste || quand() - geste > 2000) return;
         if(!tenue()) return;
-        const p = (window.scrollY - haut()) / course();
-        const i = Math.max(0, Math.min(n - 1, Math.round(p * (n - 1))));
+        const i = rang();
         const cible = Math.round(posDe(i));
         index = i;
-        /* 3 px : en dessous, on est arrive. Sans ce seuil, le calage se
-           rappellerait lui-meme indefiniment, puisque son propre glissement
-           reveille l'ecouteur de scroll ci-dessous. */
+        /* 3 px : en dessous on est arrive. Sans ce seuil le calage se
+           rappellerait sans fin, son propre glissement reveillant l'ecouteur
+           de scroll ci-dessous. */
         if(Math.abs(window.scrollY - cible) < 3){ queue(); return; }
         window.scrollTo({top: cible, behavior: 'smooth'});
       };
-      /* 130 ms de silence = le geste est fini. Assez court pour que le calage
-         suive l'inertie de pres, assez long pour ne pas se declencher entre
-         deux evenements de scroll d'un meme elan. */
       const armer = () => { if(minuteur) clearTimeout(minuteur); minuteur = setTimeout(cale, 130); };
-      this.on(window, 'touchstart', () => {
-        doigt = true;
+
+      this.on(window, 'touchstart', e => {
+        yDep = e.touches[0].clientY;
+        decide = false; libre = false; tire = false;
         if(minuteur){ clearTimeout(minuteur); minuteur = null; }
       }, {passive: true});
-      this.on(window, 'touchend', () => { doigt = false; geste = quand(); armer(); }, {passive: true});
-      this.on(window, 'scroll', () => { if(geste) armer(); }, {passive: true});
+
+      this.on(window, 'touchmove', e => {
+        if(yDep === null || libre) return;
+        const dy = yDep - e.touches[0].clientY;
+        if(!decide){
+          /* 4 px : le doigt tremble toujours un peu en se posant. En dessous
+             on n'a pas encore d'intention, et trancher sur du bruit
+             donnerait un sens au hasard. */
+          if(Math.abs(dy) < 4) return;
+          decide = true;
+          const dir = dy > 0 ? 1 : -1;
+          if(!tenue()){ libre = true; return; }
+          /* En plein passage, la position est intermediaire : la lire
+             donnerait un rang faux. On garde celui du passage en cours. */
+          if(!verrou) index = rang();
+          if((dir > 0 && index >= n - 1) || (dir < 0 && index <= 0)){ libre = true; return; }
+        }
+        /* La section tient le geste : la page ne bouge plus d'elle-meme. */
+        e.preventDefault();
+        if(tire || verrou) return;
+        if(Math.abs(dy) < SEUIL_T) return;
+        tire = true;
+        vers(index + (dy > 0 ? 1 : -1));
+      }, {passive: false});
+
+      this.on(window, 'touchend', () => {
+        yDep = null;
+        if(libre){ geste = quand(); armer(); }
+      }, {passive: true});
+
+      this.on(window, 'scroll', () => { if(libre && geste) armer(); }, {passive: true});
       this.cleanups.push(() => { if(minuteur) clearTimeout(minuteur); });
     }
 
@@ -2241,8 +2284,23 @@ export default class PixoveryPage extends React.Component {
       ? Math.max(1, (pisteHero.offsetHeight - window.innerHeight) * ARRIVEE)
       : Math.max(1, window.innerHeight * ARRIVEE);
 
+    /* LA CHUTE NE SE REJOUE PAS A L'ENVERS (28/08).
+       `pa` etait lu directement sur la position de scroll, donc reversible :
+       en REMONTANT vers le haut de la page, les lettres repartaient au
+       plafond et le titre s'effaçait. Vu depuis le bas de la page ça se lit
+       comme une disparition, pas comme une animation — le titre du site n'est
+       pas un element decoratif qu'on peut retirer parce qu'on remonte.
+       On garde donc la progression MAXIMALE atteinte : la chute avance, ne
+       recule jamais, et un rechargement la rejoue depuis le debut puisque
+       `paMax` repart de zero. C'est la meme regle que les reveals de la page
+       (« une fois montre, ca reste montre »).
+       Pour revenir au comportement reversible : supprimer `paMax` et rendre
+       `pa` egal a `brut`. */
+    let paMax = 0;
     const poseLettres = () => {
-      const pa = Math.min(1, Math.max(0, (window.scrollY || 0) / courseTitre()));
+      const brut = Math.min(1, Math.max(0, (window.scrollY || 0) / courseTitre()));
+      if(brut > paMax) paMax = brut;
+      const pa = paMax;
       lettres.forEach(c => {
         const t0 = +c.dataset.t0;
         const u = Math.min(1, Math.max(0, (pa - t0) / FEN));
