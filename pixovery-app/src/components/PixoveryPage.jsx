@@ -1934,7 +1934,10 @@ export default class PixoveryPage extends React.Component {
         if(this.navReset) this.navReset();
       }, 200);
     };
-    if(lbImg) this.on(lbImg, 'click', e => { e.stopPropagation(); if(this.lbFiche) return; setZoom(!zoomed); });
+    /* stopPropagation UNIQUEMENT quand le clic sert a quelque chose. En mode
+       fiche le zoom 1:1 est desactive : on laisse donc le clic remonter
+       jusqu'au plein ecran, qui s'en sert pour fermer (voir plus bas). */
+    if(lbImg) this.on(lbImg, 'click', e => { if(this.lbFiche) return; e.stopPropagation(); setZoom(!zoomed); });
     const openLb = piece => {
       if(!lb || !lbImg) return;
       const m = piece.querySelector('[data-piecemedia]'); if(!m) return;
@@ -1991,7 +1994,21 @@ export default class PixoveryPage extends React.Component {
         openLb(p);
       });
     });
-    if(lb) this.on(lb, 'click', e => { if(!lbBox || !lbBox.contains(e.target)) closeLb(); });
+    if(lb) this.on(lb, 'click', e => {
+      /* le fond, partout et toujours */
+      if(!lbBox || !lbBox.contains(e.target)){ closeLb(); return; }
+      /* TELEPHONE : IL N'Y A PLUS DE FOND A TOUCHER. La fiche occupe tout
+         l'ecran, donc la regle ci-dessus ne peut plus se declencher — on se
+         retrouvait enferme, la croix etant le seul moyen de sortir.
+         Tout ce qui n'est PAS le texte ferme donc la fiche : le visuel
+         compris, dont le clic ne sert a rien ici. Le panneau, lui, garde ses
+         clics — sinon on ne pourrait pas selectionner un mot sans que la
+         fiche se referme sous les doigts. */
+      const petit = !!(window.matchMedia && window.matchMedia('(max-width:900px)').matches);
+      if(!petit || !this.lbFiche) return;
+      const panneau = lbBox.querySelector('[data-lbpanel]');
+      if(!panneau || !panneau.contains(e.target)) closeLb();
+    });
     const lbc = this.q('[data-lbclose]');
     if(lbc) this.on(lbc, 'click', closeLb);
     this.on(window, 'keydown', e => { if(e.key === 'Escape') closeLb(); });

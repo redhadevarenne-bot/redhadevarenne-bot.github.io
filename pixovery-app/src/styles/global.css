@@ -1537,81 +1537,89 @@ footer, footer a, small{
       Contact, meme correction — sur telephone, ces mesures passent en
       PIXELS.
 
-   CE QU'ON FAIT. La fiche devient une vraie feuille plein ecran, coupee en
-   deux zones qui ne se melangent pas : EN HAUT un visuel fixe, EN BAS un
-   texte qui defile. La scene elle-meme ne defile plus du tout — c'est ce qui
-   garantit que le mockup ne peut plus etre pousse hors de l'ecran ni tranche
-   par un bord.
+   CE QU'ON FAIT. UNE SEULE GLISSIERE. Le plein ecran devient lui-meme la
+   zone qui defile : le visuel en entier tout en haut, le texte a la suite,
+   et le doigt fait defiler l'ensemble comme n'importe quelle page. C'est le
+   geste que tout le monde connait, et surtout il n'y a plus rien a rogner.
 
-   44 dvh pour le visuel : de quoi le lire en entier, en laissant plus de la
-   moitie de l'ecran au texte. `contain` fait le reste — l'image est montree
-   ENTIERE, quitte a laisser deux bandes sombres sur les cotes. Une image de
-   projet ne se recadre jamais : c'est du travail livre au millimetre.
+   TOUT CE QUI A ETE ESSAYE AVANT ETAIT UNE VARIANTE DU MEME DEFAUT : une
+   boite qui defile A L'INTERIEUR d'un plein ecran qui, lui, ne defile pas.
+     - Version d'origine : scene en 86 vh avec `overflow-y:auto`. Le visuel
+       remontait avec le texte et se faisait trancher par le bord haut de la
+       boite. C'est ce qu'on lisait comme « l'image est coupee ».
+     - Deuxieme essai : visuel colle en `position:sticky` en haut de cette
+       meme boite. Le texte passait alors LITTERALEMENT SOUS l'image, et
+       `aspect-ratio:1/1` se battait avec `max-height` — selon celui qui
+       l'emportait, la boite du visuel n'avait pas le meme rapport.
+     - Troisieme essai : visuel a hauteur fixe, panneau defilant en dessous.
+       L'image n'etait enfin plus coupee, mais le texte se lisait par la
+       fente qui restait sous elle.
+   Le defaut commun n'etait jamais le visuel : c'etait le defilement
+   imbrique. On le supprime, il n'y a plus de fente, plus de bord qui coupe,
+   plus de deux mecaniques qui se disputent une hauteur.
 
-   PREMIERE TENTATIVE, ECARTEE : coller le visuel en `position:sticky` en
-   haut d'une scene qui defile. Sur le papier c'est plus elegant — le texte
-   glisse sous l'image. En pratique la scene defilait toujours, et selon que
-   `aspect-ratio:1/1` ou `max-height` l'emportait, la boite du visuel n'avait
-   pas le meme rapport : l'image ressortait recadree. Deux mecaniques qui se
-   disputent la meme hauteur, c'est une de trop. Une hauteur fixe, une seule
-   zone qui defile, et le probleme n'existe plus.
+   L'image est en `width:100%` et `height:auto` : elle se pose a sa vraie
+   proportion, ENTIERE, sans plafond de hauteur. Un mockup carre de 1000 px
+   occupe donc un carre de la largeur de l'ecran. Une image de projet ne se
+   recadre jamais — c'est du travail livre au millimetre.
    -------------------------------------------------------------------------- */
 @media (max-width:900px){
-  /* plein ecran franc : la marge de 26 u et le coin arrondi n'ont plus de
-     sens des que la fiche occupe tout l'ecran */
-  [data-lbmode="fiche"]{padding:0 !important}
-  [data-lbmode="fiche"] [data-lbbox]{
-    max-width:100% !important; width:100% !important;
-    height:100dvh; gap:0 !important;
-  }
-  [data-lbmode="fiche"] [data-lbstage]{
-    flex-direction:column;
-    height:100%; max-height:none;
-    border:0; border-radius:0;
-    /* LA SCENE NE DEFILE PLUS. C'etait la cause de « l'image est rognee » :
-       elle etait la boite qui defile, donc le visuel remontait avec le texte
-       et se faisait trancher par son bord haut. Ici elle ne bouge plus du
-       tout — elle se contente d'empiler deux zones : un visuel fixe et un
-       texte qui defile. Seul le panneau a le droit de defiler. */
-    overflow:hidden;
-  }
-  [data-lbmode="fiche"] [data-lbimg]{
-    /* Hauteur FIXE et explicite, pas un aspect-ratio plafonne par un
-       max-height : les deux se battaient, et selon lequel gagnait la boite
-       n'avait pas le meme rapport. Ici la boite fait exactement 44 dvh de
-       haut sur toute la largeur, et `contain` garantit que L'IMAGE ENTIERE
-       y tient — au pire il reste deux bandes sombres sur les cotes, du meme
-       noir que le fond. Une image de projet ne se recadre jamais.
-       dvh et pas vh : sur telephone la barre d'adresse se retracte, et vh
-       reste fige sur la hauteur maximale — le visuel debordait sous le
-       panneau tant que la barre etait visible. */
-    flex:0 0 auto;
-    width:100%;
-    height:44dvh;
-    aspect-ratio:auto !important;
-    max-height:none !important;
-    max-width:none !important;
-    object-fit:contain !important;
-    object-position:center center;
-    padding:10px 10px 0;
-    box-sizing:border-box;
-  }
-  [data-lbmode="fiche"] [data-lbpanel]{
-    /* min-height:0 est obligatoire : sans lui un enfant flex refuse de
-       devenir plus petit que son contenu et le panneau pousse la scene au
-       lieu de defiler a l'interieur. */
-    flex:1 1 auto; min-height:0; z-index:2;
+  /* Le plein ecran devient LA glissiere. `display:block` : en flex centre,
+     un contenu plus haut que la fenetre depasse par le HAUT et devient
+     inatteignable au defilement — le piege classique du `align-items:center`
+     sur une boite qui defile. */
+  [data-lbmode="fiche"]{
+    padding:0 !important;
+    display:block !important;
     overflow-y:auto;
     overscroll-behavior:contain;
     -webkit-overflow-scrolling:touch;
-    justify-content:flex-start;
-    /* en pixels, pas en --u : voir le point 3 ci-dessus */
-    padding:22px 22px 40px;
     background:#0A0910;
   }
-  /* une ligne de lumiere a la jonction : elle marque le bord du visuel
-     pendant que le texte passe dessous, sinon les deux se touchent sans
-     transition et la couture se voit */
+  /* Les deux nappes de fond sont en `absolute inset:0` : des que le parent
+     defile, elles s'arretent au bout du premier ecran et le reste de la
+     fiche se lit sur du vide. On les accroche a la fenetre. */
+  [data-lbmode="fiche"] > i{position:fixed !important}
+  /* La croix ne doit jamais partir avec le defilement : sur une fiche
+     longue, il faudrait remonter tout en haut pour fermer. */
+  [data-lbmode="fiche"] [data-lbclose]{
+    position:fixed !important;
+    top:12px !important; right:12px !important;
+    width:38px !important; height:38px !important;
+    background:rgba(0,0,0,.62) !important;
+    backdrop-filter:blur(6px);
+  }
+  [data-lbmode="fiche"] [data-lbbox]{
+    max-width:100% !important; width:100% !important;
+    height:auto; min-height:100dvh;
+    gap:0 !important;
+  }
+  [data-lbmode="fiche"] [data-lbstage]{
+    flex-direction:column;
+    height:auto; max-height:none;
+    border:0; border-radius:0;
+    overflow:visible;
+  }
+  [data-lbmode="fiche"] [data-lbimg]{
+    flex:0 0 auto;
+    width:100%; height:auto;
+    /* les trois contraintes du bloc ordinateur sont neutralisees une par
+       une : ce sont elles qui fabriquaient une boite au rapport impose */
+    aspect-ratio:auto !important;
+    max-height:none !important;
+    max-width:100% !important;
+    object-fit:contain !important;
+  }
+  [data-lbmode="fiche"] [data-lbpanel]{
+    flex:0 0 auto;
+    overflow:visible;
+    justify-content:flex-start;
+    /* en pixels, pas en --u : a 390 px de large, 32 u valent 12 px */
+    padding:22px 22px 48px;
+    background:#0A0910;
+  }
+  /* une ligne de lumiere a la jonction : elle marque la fin du visuel et le
+     debut de la lecture, sinon les deux se touchent sans transition */
   [data-lbmode="fiche"] [data-lbpanel]::before{
     content:'';
     display:block;
@@ -1625,14 +1633,6 @@ footer, footer a, small{
   [data-lbtexte] p{font-size:14.5px; line-height:1.72; margin-bottom:13px; max-width:none}
   [data-lbtexte] h4{font-size:10.5px; margin:22px 0 8px}
   [data-lbtexte] [data-lbliste]{font-size:13px}
-  /* la croix de fermeture flotte au-dessus du visuel colle : on lui donne
-     de quoi se detacher du mockup, qui peut etre clair */
-  [data-lbclose]{
-    top:12px !important; right:12px !important;
-    width:38px !important; height:38px !important;
-    background:rgba(0,0,0,.62) !important;
-    backdrop-filter:blur(6px);
-  }
 }
 
 /* Rubriques d'une fiche longue (Presentation, Concept, Declinaisons...).
@@ -1735,6 +1735,40 @@ footer, footer a, small{
      panneaux descend de la meme quantite pour ne pas venir buter dessous. */
   [data-svctete]{top:clamp(74px, 17vw, 100px) !important}
   [data-svc]{padding-top:clamp(152px, 38vw, 212px) !important}
+
+  /* --- LE « 02 » QUI N'ARRIVE QU'AU RETOUR ------------------------------
+     Symptome : on entre dans le service 02, son gros chiffre n'est pas la ;
+     on va au 03, on revient au 02, il y est. Donc il n'est ni efface ni
+     transparent — il n'a simplement JAMAIS ETE PEINT la premiere fois.
+
+     La cause est la taille de la couche. [data-svcrail] fait 400 vw de large
+     sur 100 vh, et il portait `will-change:transform` : le navigateur en fait
+     une seule couche composee, pre-rendue d'un bloc. Sur un ecran de 390 px
+     a DPR 3, ca represente ~4700 x 2400 pixels, soit une quarantaine de Mo
+     pour la seule barre des services. Sur telephone c'est au-dela du budget :
+     le navigateur ne rasterise qu'une partie des tuiles, et les zones jamais
+     encore affichees peuvent rester vides. Revenir dessus force la
+     rasterisation — d'ou le chiffre qui « apparait » au deuxieme passage.
+     C'est la meme histoire que les 108 Mo des planches du hero, documentee
+     dans ETAT-DES-LIEUX : sur telephone, la memoire est la contrainte.
+
+     Deux corrections independantes, pour ne pas dependre d'un seul pari :
+     1. On retire `will-change` du rail sur telephone. Il continue de bouger
+        en translate3d, donc il reste compose — mais le navigateur gere ses
+        tuiles normalement au lieu de tenir une couche geante pre-rendue.
+        `will-change` est une PROMESSE faite au navigateur, pas une
+        optimisation gratuite : sur une surface de cette taille elle coute
+        plus qu'elle ne rapporte.
+     2. Chaque chiffre devient sa propre petite couche (translateZ(0)). Quatre
+        couches de la taille d'un chiffre, c'est negligeable, et leur
+        rasterisation ne depend plus de celle du rail.
+     Sur ordinateur, rien ne change : ces deux regles sont sous 768 px. */
+  [data-svcrail]{will-change:auto !important}
+  [data-svcnum]{
+    transform:translateZ(0);
+    backface-visibility:hidden;
+    opacity:1 !important;
+  }
 
   /* --- 3. LE SOUS-TITRE DE « MES PROJETS » ------------------------------
      Il etait au fer a gauche, justifie, sur toute la largeur : une bande de
