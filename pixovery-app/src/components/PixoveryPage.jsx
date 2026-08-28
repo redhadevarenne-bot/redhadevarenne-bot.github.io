@@ -3383,6 +3383,29 @@ export default class PixoveryPage extends React.Component {
     setTimeout(rhythm, 500);
   }
 
+  /* ==========================================================================
+     ENVOI DU FORMULAIRE — 28/08
+
+     AVANT : on fabriquait un lien `mailto:` et on poussait le visiteur dans sa
+     messagerie avec le message pre-rempli. Ca paraissait malin, ca ne l'etait
+     pas. Sur telephone sans appli mail configuree, il ne se passe rien du
+     tout. Sur ordinateur chez quelqu'un qui lit son courrier dans son
+     navigateur, rien non plus. Et meme quand ca marche, il reste au visiteur
+     un « Envoyer » a cliquer dans SA messagerie — beaucoup ne le font pas.
+     Autrement dit : des demandes perdues sans qu'aucune erreur ne s'affiche,
+     ni pour lui ni pour nous. En prime l'adresse etait en clair dans le code,
+     donc aspirable par les robots.
+
+     MAINTENANT : un vrai envoi, en arriere-plan, vers Web3Forms — un relais
+     qui poste le message dans la boite Gmail de Redha. Le visiteur ne quitte
+     jamais la page et n'a plus rien a faire.
+
+     La cle d'acces est PUBLIQUE par construction : sur un site statique il n'y
+     a pas de serveur ou la cacher, et c'est le modele assume du service. Elle
+     ne donne acces a rien — elle ne fait que router vers une adresse qui, elle,
+     n'apparait nulle part. Le seul risque est le spam : c'est le role du champ
+     piege `botcheck` pose dans le formulaire.
+     ========================================================================== */
   submit(e){
     e.preventDefault();
     const form = e.target, f = form.elements, msg = this.q('[data-formmsg]');
@@ -3399,14 +3422,81 @@ export default class PixoveryPage extends React.Component {
       bad[0].focus();
       return;
     }
+    /* Le robot est tombe dans le piege : on fait comme si tout allait bien.
+       Lui dire qu'il a ete repere, c'est lui apprendre a contourner. */
+    if(f.botcheck && f.botcheck.checked){
+      msg.style.color = 'var(--pink-b)';
+      msg.textContent = 'Message envoyé.';
+      form.reset();
+      return;
+    }
+    /* Double envoi : le bouton est desarme le temps de la requete. Sans ca,
+       un double clic sur une connexion lente envoie deux fois le meme
+       message — et c'est exactement ce que fait quelqu'un quand rien ne
+       repond dans la seconde. */
+    const btn = form.querySelector('button[type="submit"]');
+    if(btn && btn.disabled) return;
+    const libelle = btn ? btn.innerHTML : '';
+    if(btn){ btn.disabled = true; btn.style.opacity = '.6'; btn.style.cursor = 'wait'; btn.textContent = 'Envoi…'; }
     msg.style.color = 'var(--pink-b)';
-    const sujet = f.sujet.value.trim() || 'Nouveau message depuis pixovery';
-    const body = 'Nom : ' + f.nom.value.trim() + ' ' + f.prenom.value.trim() +
-      '\nEmail : ' + f.email.value.trim() + '\n\n' + f.message.value.trim();
-    window.location.href = 'mailto:' + (this.props.email ?? 'pixovery@gmail.com') +
-      '?subject=' + encodeURIComponent(sujet) + '&body=' + encodeURIComponent(body);
-    msg.textContent = 'Votre messagerie s\u2019ouvre avec le message pré-rempli.';
+    msg.textContent = 'Envoi en cours…';
+
+    const rendreLeBouton = () => {
+      if(!btn) return;
+      btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = '';
+      btn.innerHTML = libelle;
+      /* le bouton porte l'effet magnetique : son transform vit dans --mx,
+         ecrit par parallax(). innerHTML le recree a l'identique, il n'y a
+         donc rien a raccrocher — l'ecouteur est sur le bouton, pas sur son
+         contenu. */
+    };
+
+    const donnees = {
+      access_key: '90de4956-bb6f-4bb1-a6a0-e516828e6bc4',
+      /* `subject` est le sujet du mail que Redha recoit : on prefixe pour que
+         ces messages se reperent d'un coup d'oeil dans une boite Gmail. */
+      subject: 'Pixovery — ' + (f.sujet.value.trim() || 'Nouveau message du site'),
+      from_name: 'Site Pixovery',
+      /* `name` et `email` sont les deux champs que le service reconnait :
+         email devient le « Repondre a » du mail, donc un clic sur Repondre
+         ecrit directement au visiteur. */
+      name: (f.nom.value.trim() + ' ' + f.prenom.value.trim()).trim(),
+      email: f.email.value.trim(),
+      Sujet: f.sujet.value.trim() || '(non precise)',
+      message: f.message.value.trim()
+    };
+
+    /* Pas de `mode:'no-cors'` : on VEUT lire la reponse. Sans elle on ne
+       saurait pas distinguer un envoi reussi d'un echec, et on afficherait
+       « message envoye » a quelqu'un dont le message s'est perdu. */
+    fetch('https://api.web3forms.com/submit', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      body: JSON.stringify(donnees)
+    })
+    .then(r => r.json())
+    .then(d => {
+      rendreLeBouton();
+      if(d && d.success){
+        msg.style.color = 'var(--pink-b)';
+        msg.textContent = 'Message envoyé.';
+        form.reset();
+      } else {
+        echec(msg);
+      }
+    })
+    .catch(() => { rendreLeBouton(); echec(msg); });
+
+    /* Un echec ne doit JAMAIS etre un cul-de-sac : si le relais est en panne
+       ou si le visiteur est hors ligne, on lui donne l'adresse en clair pour
+       qu'il puisse ecrire quand meme. C'est le seul endroit du site ou elle
+       apparait, et seulement en cas de panne. */
+    function echec(m){
+      m.style.color = '#FF6B6B';
+      m.textContent = "L'envoi a échoué. Écrivez-moi directement à pixovery@gmail.com.";
+    }
   }
+
 
   render(){
     return (
@@ -4189,6 +4279,15 @@ export default class PixoveryPage extends React.Component {
               <h2 data-reveal="1" style={{margin: "0", fontWeight: "700", fontSize: "calc(40*var(--tu))", lineHeight: "calc(40*var(--tu))", textTransform: "uppercase", color: "#fff", letterSpacing: "calc(-.4*var(--u))"}}>Discutons de<br /><em style={{fontStyle: "normal", color: "var(--violet-b)"}}>votre projet</em></h2>
               <p data-reveal="1" style={{margin: "calc(18*var(--u)) 0 0", fontSize: "calc(13*var(--tu))", lineHeight: "calc(19.5*var(--tu))", color: "rgba(255,255,255,.88)"}}>Vous avez un projet, une envie ou simplement une idée qui mérite d’être explorée ? On peut commencer par en parler, sans brief compliqué ni grand discours. Le reste viendra ensuite.</p>
               <form data-form="1" noValidate={true} onSubmit={this.handleSubmit} style={{marginTop: "calc(22*var(--u))", display: "flex", flexDirection: "column", gap: "calc(14*var(--u))"}}>
+                {/* CHAMP PIEGE. Invisible pour un humain, rempli par la plupart
+                    des robots a spam qui remplissent tout ce qu'ils trouvent. Si
+                    « botcheck » revient non vide, on jette silencieusement — on ne
+                    dit pas au robot qu'il a ete repere.
+                    `display:none` plutot qu'un deport hors ecran : c'est ce que
+                    recommande Web3Forms, et un champ en display:none n'est jamais
+                    atteint par la navigation au clavier ni annonce par un lecteur
+                    d'ecran. tabIndex -1 et autoComplete off par precaution. */}
+                <input type="checkbox" name="botcheck" tabIndex="-1" autoComplete="off" aria-hidden="true" style={{display: "none"}} />
                 <div data-reveal="1" style={{display: "flex", gap: "calc(18*var(--u))"}}>
                   <input type="text" name="nom" placeholder="Nom" autoComplete="family-name" style={{flex: "1", minWidth: "0", width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
                   <input type="text" name="prenom" placeholder="Prénom" autoComplete="given-name" style={{flex: "1", minWidth: "0", width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
