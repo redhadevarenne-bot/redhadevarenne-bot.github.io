@@ -1254,6 +1254,19 @@ footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.
    essaye sur les gros titres puis abandonne : il ne survit que sur les
    petits textes, bloc 10.
    -------------------------------------------------------------------------- */
+/* --- 28/08 : POPPINS ESSAYEE PUIS ECARTEE ----------------------------
+   Poppins a ete posee ici a la place de Newake pour regler la question de
+   licence (le fichier charge est `NewakeFont-Demo.otf`, la version DEMO,
+   gratuite pour un usage PERSONNEL seulement — pas pour un site qui vend des
+   prestations). Rendu refuse par Redha : Poppins est geometrique et ronde la
+   ou Newake est condensee et anguleuse, le titre perdait son caractere.
+   Newake est donc remise, et LA QUESTION DE LICENCE RESTE OUVERTE : soit
+   acheter la licence web de Newake (une trentaine d'euros), soit trouver une
+   condensee libre du meme genre. Ne pas oublier ce point avant de faire du
+   site une vitrine commerciale.
+   Si tu retentes une substitution un jour : Poppins demandait graisse 800
+   (Newake n'en a qu'une, d'ou le 400), interlettrage 0,4 u au lieu de 1,5,
+   et la suppression des corrections d'accents en .14em. */
 @font-face{
   font-family:'Newake';
   src:url(/assets/fonts/NewakeFont-Demo.otf) format('opentype');
