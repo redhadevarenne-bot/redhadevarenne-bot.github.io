@@ -1,4 +1,4 @@
-# État des lieux — 28 août 2026 (soir)
+# État des lieux — 29 août 2026
 
 Point de reprise. La carte technique reste dans `CLAUDE.md` ; ce fichier dit
 **où on en est**, **ce qu'il ne faut pas refaire**, et **ce qui reste**.
@@ -46,6 +46,88 @@ image, l'ajouter explicitement, et vérifier :
 ```powershell
 @("img10-cut.webp","proc-v7.webp","pot-solide.webp","filaire-repos.webp","perso-tour-v2.webp","perso-filaire-v2.webp") | % { git ls-files --error-unmatch "pixovery-app/public/assets/$_" 2>$null | Out-Null; if ($LASTEXITCODE -ne 0) { "NON SUIVI -> $_" } }
 ```
+
+---
+
+# CE QUI A CHANGÉ LE 29 AOÛT — LE MENU MOBILE
+
+Tout tient dans le bloc « 5. MENU MOBILE » de `global.css`. Aucune ligne de
+JavaScript touchée.
+
+## A. Le menu s'ouvrait ET se fermait « en deux temps » — la cause
+
+`header()` écrit en ligne `backdrop-filter: blur(10px)` dès qu'on quitte le
+haut de page. **Un élément filtré devient le bloc conteneur de ses
+descendants `position:fixed`** — et le panneau du menu est un enfant du
+`<header>`. Filtre présent, le panneau n'est plus calé sur la fenêtre mais
+sur les ~56 px de la barre : il apparaissait écrasé dans le header, puis
+sautait en plein écran. Les deux temps venaient de là, pas de l'animation.
+
+Première correction, **insuffisante** : neutraliser le filtre pendant
+`.menu-ouvert`. Ça réglait l'ouverture et cassait la fermeture — la classe
+part au clic, le filtre revient aussitôt, et le panneau en train de
+disparaître se faisait écraser dans la barre. Le même défaut à l'envers.
+
+**Correction retenue : `backdrop-filter:none` sur `[data-hdr]` sous 768 px,
+en permanence.** Sur mobile la barre est déjà un aplat noir opaque — ce flou
+d'arrière-plan ne floutait rien, il ne faisait que coûter une passe de
+composition et casser le menu.
+
+⚠️ **Ne le remets pas.** Si la barre redevient un jour semi-transparente sur
+mobile, il faudra d'abord **sortir le `<nav>` du `<header>`** dans le JSX.
+Et teste toujours les deux cas : en haut de page (pas de filtre) et après
+défilement (filtre) — ils ne donnent pas le même résultat.
+
+## B. Ouverture et fermeture n'ont plus la même animation
+
+L'état fermé porte sa propre transition, l'état `.menu-ouvert` la sienne :
+c'est le seul moyen en CSS pur d'avoir deux animations selon le sens.
+
+- **Ouverture** : rideau `clip-path` de haut en bas (0,52 s) + fondu (0,34 s).
+  Le fondu est volontairement **plus court** que le rideau : il se termine
+  pendant que le rideau descend encore, donc on lit une seule ouverture.
+- **Fermeture** : fondu seul (0,34 s). Le `clip-path` revient à sa position
+  fermée d'un coup **après** le fondu (`0s linear .34s`), quand l'opacité est
+  déjà à zéro. `visibility` suit le même retard, sinon le panneau cesserait
+  d'exister avant d'avoir fini de disparaître.
+
+Faire remonter le rideau à la fermeture a été écarté : il repart vers le haut
+alors que le regard vient de suivre une descente, ça se relit comme un à-coup.
+
+## C. La sélection : un rectangle plein arrondi
+
+La barre rose soulignée (le soulignement du desktop repris tel quel) se lisait
+comme une éraflure à cette taille. Même `<i>`, même `scaleX(0)/scaleX(1)` posé
+par `paint()` — **seule la forme change** : le `<i>` s'étire sur toute la boîte
+du lien et devient un rectangle plein en `--pink-b`.
+
+Deux points qui le font tenir :
+- `z-index:-1` + `isolation:isolate` sur le `<a>` : sinon le `<i>`, qui vient
+  après le mot dans le DOM, recouvrirait le texte.
+- Le texte reste blanc parce que `[data-nav] a` force `color:var(--txt)
+  !important`, ce qui neutralise déjà le `--pink-b` que `paint()` pose en ligne
+  sur l'entrée active. **Si tu retires ce `!important`, l'entrée active devient
+  rose sur rose.**
+- `transform-origin:center !important` : `paint()` écrit `left`/`right` en
+  style inline, et une règle `!important` d'une feuille de style passe devant
+  un style inline sans `!important`. C'est le seul endroit du fichier qui
+  exploite ça. Au centre, le rectangle s'ouvre et se referme symétriquement.
+
+## D. Taille des entrées réduite
+
+`clamp(26px, 8.4vw, 40px)` → `clamp(23px, 7.4vw, 35px)`, ~12 % de moins. Les
+trois valeurs bougent ensemble : ne baisser que le `vw` laisserait les petits
+écrans bloqués au minimum et ne changerait rien là où ça compte.
+
+## Écarté le 29/08
+
+- **Lettres ACC / SER / PORT / À / CON en violet** : essayé, écarté par Redha.
+- **Glitch continu sur les entrées** : essayé, écarté par Redha. Si tu le
+  retentes : `text-shadow` rose/violet décalé + secousse de 2 px en `steps(1)`,
+  posé sur `.menu-ouvert` (jamais sur `[data-nav] a`, sinon ça tourne panneau
+  fermé), un `animation-delay` différent par `nth-child` pour qu'une seule
+  entrée bouge à la fois, et rien avant 0,7 s pour ne pas empiéter sur le
+  rideau. Un commentaire le rappelle dans `global.css`.
 
 ---
 

@@ -348,7 +348,15 @@ input,textarea{font:inherit}
 }
 /* La naissance : --nait passe de 0 a 1 sur le debut de la piste. Rien n'est
    visible au premier pixel. Ecrit par scanHero() sur [data-herovisual]. */
-.potSolide, canvas.scanSolid, .scanWrap{ opacity:var(--nait, 1); }
+/* LE POT EST EXCLU DE LA NAISSANCE (28/08). Il en faisait partie : --nait
+   vaut 0 au premier pixel, donc au chargement de la page il n'y avait
+   STRICTEMENT RIEN a l'ecran — ni titre (il tombe au scroll), ni figurine
+   (elle se materialise au balayage), ni pot. Une landing noire tant qu'on
+   n'a pas scrolle, ce n'est pas une entree en matiere, c'est une page qui
+   a l'air cassee. Le pot reste donc pose des la premiere image : il ancre
+   la composition, et la figurine peut naitre dedans.
+   La figurine, elle, garde sa naissance — c'est elle, l'effet. */
+canvas.scanSolid, .scanWrap{ opacity:var(--nait, 1); }
 
 /* LES REFLETS DE LUNETTES.
    Ils n'apparaissent qu'une fois le defilement de la piste termine, quand la
@@ -1011,7 +1019,27 @@ footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.
   /* Fond noir plein, pas de dégradé ni de flou : la barre doit être une
      barre. header() écrit en ligne `background: transparent` tant qu'on est
      sur le hero — d'où le !important. */
-  [data-hdr]{height:auto !important; background:#000 !important}
+  /* ===== POURQUOI CE backdrop-filter:none EST LA PIECE MAITRESSE =========
+     header() ecrit en ligne `backdrop-filter: blur(10px)` des qu'on quitte
+     le haut de page. Or un element filtre devient le BLOC CONTENEUR de ses
+     descendants position:fixed — et le panneau du menu est un enfant du
+     <header>. Filtre present, le panneau n'est plus cale sur la fenetre
+     mais sur les ~56 px de la barre.
+     On l'a d'abord neutralise seulement pendant `.menu-ouvert`. Ca reglait
+     l'ouverture et cassait la FERMETURE : la classe part au clic, le filtre
+     revient aussitot, et le panneau encore en train de disparaitre se
+     retrouvait ecrase dans la barre. Le meme defaut, dans l'autre sens.
+     La vraie reponse est ici : sur mobile la barre est un aplat noir opaque
+     (background:#000 juste en dessous), donc le flou d'arriere-plan ne
+     floute rien du tout — il ne fait que couter une passe de composition et
+     casser le menu. On le supprime pour de bon, dans les deux sens.
+     NE LE REMETS PAS. Si un jour la barre redevient semi-transparente sur
+     mobile, il faudra d'abord sortir le <nav> du <header> dans le JSX. */
+  [data-hdr]{
+    height:auto !important; background:#000 !important;
+    -webkit-backdrop-filter:none !important;
+    backdrop-filter:none !important;
+  }
   /* :not([data-progress]) est indispensable. [data-hdr] contient DEUX div :
      la barre de contenu, et [data-progress], le trait de progression de 1px
      posé en bas du header (fond blanc à 7%). Le sélecteur `[data-hdr] > div`
@@ -1103,16 +1131,43 @@ footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.
        pose sans marche. En dessous de ~0,45 s le geste redevient sec.
        `visibility` garde la meme duree : sans ca le panneau redeviendrait
        cliquable ou invisible avant la fin du rideau. */
-    opacity:1;
+    /* --- FONDU A L'OUVERTURE ET A LA FERMETURE (29/08) -------------------
+       Les deux sens n'ont pas la meme transition, et c'est voulu. La regle
+       ci-dessous est l'etat FERME : c'est donc elle qui decrit la
+       FERMETURE. Le bloc `.menu-ouvert` juste apres decrit l'OUVERTURE.
+       C'est le seul moyen en CSS pur d'avoir deux animations differentes
+       selon le sens, sans une ligne de JS.
+
+       OUVERTURE : rideau de haut en bas (0,52 s) + fondu (0,34 s).
+       FERMETURE : fondu seul. Faire remonter le rideau, c'est une deuxieme
+       animation qui part vers le HAUT alors que le regard vient de suivre
+       quelque chose qui descendait — ca se lit comme un a-coup. On fait
+       donc disparaitre le panneau sur place, et le clip-path revient a sa
+       position fermee d'un coup APRES le fondu (`0s linear .34s`), quand
+       l'opacite est deja a zero : invisible.
+       `visibility` suit le meme retard, sinon le panneau cesserait d'exister
+       — et deviendrait non cliquable — avant d'avoir fini de disparaitre. */
+    opacity:0;
     visibility:hidden;
     clip-path:inset(0 0 100% 0);
-    transition:clip-path .52s cubic-bezier(.16,1,.3,1), visibility .52s;
+    transition:opacity .34s ease, visibility 0s linear .34s, clip-path 0s linear .34s;
   }
-  .menu-ouvert [data-nav]{visibility:visible; clip-path:inset(0 0 0 0)}
+  .menu-ouvert [data-nav]{
+    visibility:visible; opacity:1; clip-path:inset(0 0 0 0);
+    transition:clip-path .52s cubic-bezier(.16,1,.3,1), opacity .34s ease, visibility 0s;
+  }
 
   /* Le header se masque tout seul au défilement. Panneau ouvert, il doit
      rester : sinon le bouton de fermeture part avec lui. */
   .menu-ouvert [data-hdr]{
+    /* Le « menu en deux temps » se reglait ici a l'origine, en neutralisant
+       le backdrop-filter pendant l'ouverture. Ca ne traitait qu'un sens :
+       voir le gros commentaire sur `[data-hdr]` en haut du bloc mobile, ou
+       le filtre est maintenant supprime pour de bon. Il ne reste ici que
+       ce qui concerne vraiment l'etat ouvert.
+       `transition:none` reste utile : sans elle, le fond du header se
+       remettrait en place en 0,3 s pendant la fermeture. */
+    transition:none !important;
     transform:none !important; opacity:1 !important;
     /* CE POINT EST LE PIÈGE DE TOUT CE BLOC.
        Dès qu'on quitte le haut de page, header() pose en ligne
@@ -1143,7 +1198,10 @@ footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.
        longueur. */
     width:auto !important;
     text-align:center;
-    font-size:clamp(26px, 8.4vw, 40px) !important;
+    /* Taille reduite d'environ 12 % le 29/08 (etait 26/8.4vw/40). Les trois
+       valeurs bougent ensemble : ne baisser que le vw laisserait les petits
+       ecrans au minimum de 26 px et ne changerait rien la ou ca compte. */
+    font-size:clamp(23px, 7.4vw, 35px) !important;
     line-height:1.06;
     letter-spacing:-.01em !important;
     color:var(--txt) !important;
@@ -1166,12 +1224,53 @@ footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.
     transition:color .25s ease;
   }
 
-  /* Le trait suit maintenant la largeur du mot (voir width:auto ci-dessus).
-     Seule l'epaisseur est reprise : sous une typographie de 40 px, 1 px
-     passe pour une eraflure. */
-  [data-nav] a i{height:2px !important}
-  /* le soulignement rose d'origine : à cette taille il devient une règle */
-  [data-nav] a i{bottom:6px !important; height:2px !important; transform-origin:left !important}
+  /* --- LA SELECTION : UN RECTANGLE ARRONDI, PLUS UNE BARRE (29/08) ------
+     La barre rose etait le soulignement du desktop, repris tel quel. Sous
+     une typographie de 40 px elle se lisait comme une eraflure sous le mot.
+     On garde EXACTEMENT la meme mecanique — le meme <i>, le meme
+     scaleX(0)/scaleX(1) pose par paint() dans PixoveryPage.jsx — on ne
+     change que sa forme : au lieu d'un trait de 2 px colle en bas, il
+     s'etire sur toute la boite du lien et devient un contour arrondi.
+     Aucune ligne de JS a toucher.
+     `transform-origin:center` en !important est indispensable : paint()
+     ecrit `left` a l'ouverture et `right` a la fermeture en style INLINE, ce
+     qui ferait naitre le rectangle par un bord. Une regle !important d'une
+     feuille de style passe devant un style inline sans !important — c'est
+     le seul endroit du fichier qui exploite ca. Au centre, le rectangle
+     s'ouvre et se referme symetriquement. */
+  [data-nav] a{
+    padding-inline:clamp(16px, 5.4vw, 28px) !important;
+    isolation:isolate;
+  }
+  [data-nav] a i{
+    left:0 !important; right:0 !important;
+    top:0 !important; bottom:0 !important;
+    height:auto !important;
+    /* Rectangle PLEIN. Deux consequences a ne pas perdre de vue :
+       - `z-index:-1` (avec `isolation:isolate` sur le <a>) le renvoie
+         DERRIERE le texte. Sans ca, le <i> vient apres le mot dans le DOM
+         et un fond plein le recouvrirait purement et simplement.
+       - le texte reste blanc parce que `[data-nav] a` force
+         `color:var(--txt) !important` : le `color:var(--pink-b)` que
+         paint() pose en ligne sur l'entree active est deja neutralise sur
+         mobile. Blanc sur rose plein, donc lisible. Si tu retires ce
+         !important un jour, l'entree active devient rose sur rose. */
+    background:var(--pink-b) !important;
+    border:0 !important;
+    border-radius:clamp(13px, 3.6vw, 20px) !important;
+    z-index:-1;
+    transform-origin:center !important;
+    transition:transform .38s cubic-bezier(.16,1,.3,1) !important;
+  }
+
+  /* --- GLITCH RETIRE LE 29/08 -------------------------------------------
+     Essaye puis ecarte par Redha. Si tu le retentes un jour : la version
+     qui tenait la route etait un text-shadow rose/violet decale + une
+     secousse de 2 px, en steps(1), pose sur `.menu-ouvert` (jamais sur
+     `[data-nav] a`, sinon ca tourne panneau ferme), avec un delai different
+     par nth-child pour qu'une seule entree bouge a la fois, et rien avant
+     0,7 s pour ne pas empieter sur le rideau. */
+
 }
 
 /* « Réduire les animations » : on garde l'ouverture, on retire le mouvement. */
@@ -1255,13 +1354,19 @@ footer p, [data-legal] a, [data-legal] span{font-size:max(calc(11*var(--u)), 12.
    justifie que le pot soit le seul objet present au premier pixel — il
    flottait tout seul dans le noir.
 
-   Il reprend donc --nait, la variable de naissance écrite par scanHero() :
-   0 au premier pixel, 1 à 13 % de la piste. Le pot et la figurine se
-   matérialisent ensemble, pendant que les lettres se posent.
+   Il reprenait --nait, la variable de naissance écrite par scanHero() :
+   0 au premier pixel, 1 à 13 % de la piste.
 
-   --nait pilote aussi .scanSolid et .scanWrap, ne pas y toucher.
+   28/08 : ANNULÉ. Le pot ne naît plus, il est là dès l'arrivée. Avec le
+   titre qui tombe au scroll et la figurine qui se matérialise au balayage,
+   le faire naître lui aussi laissait une page entièrement noire tant qu'on
+   n'avait pas scrollé. Le pot est le seul élément qui peut tenir l'écran
+   tout de suite — c'est son rôle maintenant.
+
+   --nait pilote toujours .scanSolid et .scanWrap, ne pas y toucher : c'est
+   la naissance de la FIGURINE, et elle, c'est l'effet du site.
    -------------------------------------------------------------------------- */
-.potSolide{opacity:var(--nait,1) !important}
+.potSolide{opacity:1 !important}
 
 
 /* --------------------------------------------------------------------------
