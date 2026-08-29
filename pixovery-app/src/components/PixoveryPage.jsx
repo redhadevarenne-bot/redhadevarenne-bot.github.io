@@ -3097,6 +3097,24 @@ export default class PixoveryPage extends React.Component {
 
     /* Les deux planches : 76 images, 10 colonnes, tuiles 228×352. */
     const N = 76, COLS = 10, TW = 332, TH = 512;
+    /* --- LA PLANCHE FILAIRE A SES PROPRES TUILES SUR TELEPHONE (29/08) ----
+       Le 28, `LEGER` ne chargeait tout simplement PAS la planche filaire :
+       54 Mo et 1,5 Mo de telechargement economises, mais le perso rose
+       disparaissait apres la pose de repos et le scan ne modelisait plus
+       rien. C'etait la degradation la plus visible du site.
+       On la remet, en version telephone : memes 76 poses, memes 10 colonnes
+       — donc AUCUN calcul d'index ne change — mais des tuiles de 188x290 au
+       lieu de 332x512. 1880x2320 au lieu de 3320x4096 : 16,6 Mo au lieu de
+       54, et 699 Ko au lieu de 1,5 Mo.
+       Pourquoi 188 et pas moins : `RW` ci-dessous plafonne la resolution de
+       travail a 1,6x la tuile, et 188 x 1,6 = 301, soit tout juste la
+       largeur affichee (DW = 332 quand CW est a son plancher de 660). On
+       tient donc l'affichage sans agrandir au-dela de ce que le durcissement
+       de trait sait rattraper. Descendre a 176 ferait 2 Mo de moins en
+       memoire mais passerait sous ce seuil : le trait redeviendrait mou.
+       La planche PLEINE, elle, garde ses tuiles de 332x512 dans les deux
+       cas : ne confonds pas TW/TH (plein) et TWF/THF (filaire). */
+    const TWF = LEGER ? 188 : TW, THF = LEGER ? 290 : TH;
     const cvPlein = hv.querySelector('[data-perso="plein"]');
     const cvFil   = hv.querySelector('[data-perso="fil"]');
     const cxP = cvPlein ? cvPlein.getContext('2d') : null;
@@ -3166,8 +3184,8 @@ export default class PixoveryPage extends React.Component {
        franges naissent a l'agrandissement, les durcir en amont ne sert a rien.
        RW est la resolution de travail : la taille affichee, plafonnee a 1,6x
        la tuile native — au-dela on ne fait que payer des pixels vides. */
-    const RW = Math.max(TW, Math.min(Math.round(DW), Math.round(TW * 1.6)));
-    const RH = Math.round(RW * TH / TW);
+    const RW = Math.max(TWF, Math.min(Math.round(DW), Math.round(TWF * 1.6)));
+    const RH = Math.round(RW * THF / TWF);
     const BAS = 0.10, HAUT = 0.62;
     const gribouille = document.createElement('canvas');
     gribouille.width = RW; gribouille.height = RH;
@@ -3175,7 +3193,7 @@ export default class PixoveryPage extends React.Component {
     cxG.imageSmoothingQuality = 'high';
     const repeins = (sx, sy) => {
       cxG.clearRect(0, 0, RW, RH);
-      cxG.drawImage(bmF || fil, sx, sy, TW, TH, 0, 0, RW, RH);
+      cxG.drawImage(bmF || fil, sx, sy, TWF, THF, 0, 0, RW, RH);
       const d = cxG.getImageData(0, 0, RW, RH), px = d.data;
       for(let k = 0; k < px.length; k += 4){
         let a = (px[k] / 255 - BAS) / (HAUT - BAS);
@@ -3248,7 +3266,13 @@ export default class PixoveryPage extends React.Component {
            seul. C'est la degradation voulue, pas un manque. */
         if(w < 1 && pretF){
           cxF.globalAlpha = 1 - w;
-          cxF.drawImage(repeins(sx, sy), 0, 0, RW, RH, DX, DY, DW, DH);
+          /* Coordonnees calculees sur la grille de la planche FILAIRE, qui
+             n'a pas les memes tuiles que la pleine sur telephone. Reutiliser
+             sx/sy ici (grille du plein) donnerait une derive vers la droite
+             d'image en image — exactement le defaut decrit plus bas a propos
+             des noms de fichiers versionnes. */
+          cxF.drawImage(repeins((i % COLS) * TWF, ((i / COLS) | 0) * THF),
+                        0, 0, RW, RH, DX, DY, DW, DH);
         }
         if(w > 0){
           cxF.globalAlpha = w;
@@ -3328,24 +3352,12 @@ export default class PixoveryPage extends React.Component {
        requete vers la page courante). Si createImageBitmap manque ou
        echoue, on garde les <img> : degrade, pas casse. */
     const enBitmap = () => {
-      /* En mode LEGER on n'attend PAS pretF : la planche filaire ne viendra
-         jamais. Sans cette exception on resterait bloque ici, bmP ne serait
-         jamais cree, et la planche pleine resterait une <img> que le
-         navigateur est libre de redecoder en plein defilement — precisement
-         la saccade que createImageBitmap etait la pour supprimer. */
-      if(bmP || !pretP || (!pretF && !LEGER) || !window.createImageBitmap) return;
+      /* Le 28, LEGER n'attendait pas `pretF` parce que la planche filaire
+         n'arrivait jamais. Depuis le 29 elle arrive dans les deux cas, en
+         version telephone : le chemin redevient unique, on attend les deux
+         planches et on les decode ensemble. */
+      if(bmP || !pretP || !pretF || !window.createImageBitmap) return;
       const VIDE = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-      if(LEGER){
-        createImageBitmap(plein)
-          .then(a => {
-            bmP = a;
-            plein.onload = null;
-            plein.src = VIDE;
-            vue = -1; dessine(derniere);
-          })
-          .catch(() => {});
-        return;
-      }
       Promise.all([createImageBitmap(plein), createImageBitmap(fil)])
         .then(([a, b]) => {
           bmP = a; bmF = b;
@@ -3367,10 +3379,10 @@ export default class PixoveryPage extends React.Component {
        decode rien. Aucun autre chemin de code ne change. */
     if(!ALLEGE('hero')){
       plein.src = '/assets/perso-tour-v2.webp';
-      /* LEGER : la ligne suivante est LA correction. Ne pas poser ce src,
-         c'est economiser 1,5 Mo de telechargement, 54 Mo de memoire, et
-         toutes les executions de repeins(). */
-      if(!LEGER) fil.src = '/assets/perso-filaire-v2.webp';
+      /* Sur telephone, la meme planche en tuiles 188x290 : 699 Ko et 16,6 Mo
+         au lieu de 1,5 Mo et 54 Mo. Voir TWF/THF en haut de la methode. */
+      fil.src = LEGER ? '/assets/perso-filaire-mobile.webp'
+                      : '/assets/perso-filaire-v2.webp';
       repos.src = '/assets/filaire-repos.webp';
     }
 
@@ -3859,7 +3871,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Affiche événementielle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Funky Night</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Affiche et supports réseaux</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -3885,7 +3896,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Kabuki Sushi</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et menu</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -3910,7 +3920,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Top Bun</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et packaging fast-food</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -3935,7 +3944,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Ashkan Sports</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et déclinaisons boutique</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -3959,7 +3967,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Pétale Impérial</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et print</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -3984,7 +3991,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Bikini Bar</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, carte et signalétique</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -4010,7 +4016,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Bring Eat</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et supports livraison</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -4034,7 +4039,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Jung Fu</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et packaging restaurant</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -4058,9 +4062,8 @@ export default class PixoveryPage extends React.Component {
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Ô Bonheur D'Emy</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, étiquettes et textile</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -4087,7 +4090,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Neometris</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, plaquette et interface</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -4111,7 +4113,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Crazy Donutz</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et carte</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -4136,7 +4137,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Aldo Viola</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et identité visuelle</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -4161,7 +4161,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Pimp'Up</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et campagne</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -4187,7 +4186,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Relax</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, papeterie et supports bien-être</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -4208,7 +4206,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Bretzelle</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo, packaging et supports</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -4234,7 +4231,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Mr. Fish</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Logo et packaging à emporter</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>
@@ -4260,7 +4256,6 @@ export default class PixoveryPage extends React.Component {
                 <div style={{marginTop: "calc(20*var(--u))"}}>
                   <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Affiche événementielle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Oldschool Tropical Mix</h3>
-                  <p style={{margin: "calc(6*var(--u)) 0 0", fontSize: "calc(12*var(--tu))", color: "rgba(255,255,255,.45)"}}>Affiche et supports réseaux</p>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
                   <div data-piecetexte="1" hidden>

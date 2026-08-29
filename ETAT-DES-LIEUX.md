@@ -49,7 +49,83 @@ image, l'ajouter explicitement, et vérifier :
 
 ---
 
-# CE QUI A CHANGÉ LE 29 AOÛT — LE MENU MOBILE
+# CE QUI A CHANGÉ LE 29 AOÛT
+
+## 0. LE PERSO ROSE EST DE RETOUR SUR TÉLÉPHONE
+
+Redha : « sur la version responsive le perso rose fait juste disparaître ».
+Ce n'était pas un bug mais la dégradation posée le 28 : `LEGER` ne chargeait
+pas `perso-filaire-v2.webp` du tout. Il restait la pose de repos
+(`filaire-repos.webp`), qui s'efface en fondu aux images 17-20 — et plus rien
+ne la remplaçait. **Le scan ne modélisait plus rien sur téléphone**, alors que
+c'est l'effet signature du hero.
+
+**Version téléphone de la planche : `perso-filaire-mobile.webp`.** Mêmes 76
+poses, mêmes 10 colonnes — donc **aucun calcul d'index ne change** — mais des
+tuiles de **188 × 290** au lieu de 332 × 512. Planche 1880 × 2320 :
+
+| | desktop | téléphone |
+|---|---|---|
+| fichier | 1,5 Mo | **699 Ko** |
+| mémoire décodée | 54 Mo | **16,6 Mo** |
+
+**Pourquoi 188 et pas moins.** `RW` plafonne la résolution de travail du
+repeint à **1,6 × la tuile**, et 188 × 1,6 = 301, soit tout juste la largeur
+affichée (`DW` = 332 quand `CW` est à son plancher de 660). On tient donc
+l'affichage sans agrandir au-delà de ce que le durcissement de trait sait
+rattraper. Descendre à 176 ferait gagner 2 Mo mais passerait sous ce seuil :
+le trait redeviendrait mou. Le durcissement s'applique **après**
+l'agrandissement, c'est ce qui rend une planche réduite acceptable.
+
+⚠️ **Ne confonds pas `TW`/`TH` et `TWF`/`THF`.** La planche **pleine**
+(`perso-tour-v2.webp`) garde ses tuiles de 332 × 512 dans les deux cas ; seule
+la **filaire** a les siennes. Les coordonnées source du filaire se calculent
+sur SA grille — réutiliser celles du plein donne une dérive vers la droite
+d'image en image.
+
+Regénérer la planche si besoin (depuis `perso-filaire-v2.webp`, tuile par
+tuile pour ne pas baver aux bords, Lanczos, WebP niveaux de gris qualité 80) :
+
+```python
+from PIL import Image
+TW,TH,COLS,ROWS,N = 332,512,10,8,76
+TWF,THF = 188,290
+src = Image.open('perso-filaire-v2.webp').convert('L')
+out = Image.new('L',(COLS*TWF, ROWS*THF), 0)
+for i in range(N):
+    c,r = i%COLS, i//COLS
+    t = src.crop((c*TW, r*TH, c*TW+TW, r*TH+TH)).resize((TWF,THF), Image.LANCZOS)
+    out.paste(t,(c*TWF, r*THF))
+out.save('perso-filaire-mobile.webp','WEBP',quality=80,method=6)
+```
+
+`enBitmap()` redevient un chemin unique : la planche filaire arrive dans les
+deux cas, on attend `pretF` partout.
+
+## 0 bis. LES DESCRIPTEURS GRIS DU PORTFOLIO SONT SUPPRIMÉS
+
+Les 17 lignes grises sous chaque nom de projet (« Logo, packaging et menu »,
+« Logo et déclinaisons boutique »…) sont retirées. **Quatorze sur dix-sept
+commençaient par « Logo »** : au niveau de la grille elles ne distinguaient
+rien, elles listaient des livrables — or personne ne compare des livrables en
+survolant une grille.
+
+L'objection SEO a été examinée et écartée : les `alt` des images portent déjà
+les mêmes mots-clés, en mieux et sans répétition (« Création de logo Top Bun :
+déclinaisons du logo et packaging pour un fast-food burger »). Le détail des
+livrables reste dans la fiche qui s'ouvre au clic.
+
+Il reste **deux lignes par vignette** : le sur-titre violet (la catégorie, qui
+varie vraiment) et le nom du projet.
+
+⚠️ Les règles CSS `[data-piece] p` (global.css, lignes ~833, ~1493, ~1892) ne
+servent plus la grille. Elles sont laissées en place volontairement : elles
+touchent aussi les `<p>` de `[data-piecetexte]`, qui alimentent la lightbox.
+Ne les supprime pas sans vérifier la fiche.
+
+---
+
+# LE MENU MOBILE — 29 AOÛT
 
 Tout tient dans le bloc « 5. MENU MOBILE » de `global.css`. Aucune ligne de
 JavaScript touchée.
