@@ -16,6 +16,23 @@
 <meta name="author" content="Redha Devarenne">
 <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
 <meta name="theme-color" content="#000000">
+
+<!-- FAVICON. Il n'y en avait aucun : le navigateur demandait /favicon.ico,
+     recevait un 404 et affichait son icone generique — y compris a cote du
+     resultat dans Google. Les cinq fichiers sont a la RACINE de public/, donc
+     servis a la racine du site : ne les deplace pas dans assets/.
+     - favicon.ico  : 16/32/48 dans un seul fichier, encore lu par Google et
+       les vieux navigateurs.
+     - favicon-32   : l'onglet des navigateurs modernes.
+     - apple-touch  : iOS ignore la transparence et composite sur du blanc ;
+       celui-ci porte donc deja le fond noir du site, et une marge plus large
+       parce que iOS rogne les angles.
+     - icon-192/512 : Android, via le manifeste.
+     Tous sont generes depuis assets/logo-p.png (#7806E5), sans deformation. -->
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
 <link rel="canonical" href="https://www.pixovery.com/">
 
 <!-- Open Graph : Facebook, LinkedIn, WhatsApp, Slack, Discord. -->
@@ -73,10 +90,6 @@
         {
           "@type": "Country",
           "name": "France"
-        },
-        {
-          "@type": "Place",
-          "name": "Collaboration à distance, partout"
         }
       ],
       "knowsAbout": [

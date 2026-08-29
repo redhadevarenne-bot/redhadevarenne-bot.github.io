@@ -1576,7 +1576,61 @@ footer, footer a, small{
   70%  {transform:translateY(11px);    opacity:0}
   100% {transform:translateY(11px);    opacity:0}
 }
-@media (prefers-reduced-motion:reduce){ .cueBille{animation:none} }
+/* `html:not([data-motion="full"])` est indispensable, et il manquait (corrige
+   le 29/08). Sans lui, la bille reste figee sur le poste de travail — ou
+   « reduire les animations » est actif en permanence — MEME en ?motion=full,
+   et on croit que l'invite n'est pas animee alors qu'elle l'est pour tous les
+   visiteurs. C'est le meme piege que pour les reflets de lunettes (bloc du
+   haut) : une @media prefers-reduced-motion ignore l'URL, c'est le JS qui pose
+   data-motion sur <html> pour lui redonner la main. */
+@media (prefers-reduced-motion:reduce){
+  html:not([data-motion="full"]) .cueBille{animation:none}
+}
+
+/* --------------------------------------------------------------------------
+   L'INVITE A DEFILER SUR SON PROPRE FOND — 29/08, ordinateur seulement
+
+   Elle etait posee a nu au centre du hero. Sur une zone sombre et calme elle
+   se lit, mais elle passe pour un detail du decor plutot que pour une
+   consigne. Un aplat noir legerement transparent la detache du fond sans la
+   transformer en bouton : elle reste `pointer-events:none`, ce n'est pas un
+   controle, c'est une indication.
+
+   Pas de backdrop-filter : derriere, le hero est deja tres sombre a cet
+   endroit precis, le flou ne se verrait pas et couterait une passe de
+   composition sur la section la plus chargee du site. Un rgba suffit.
+
+   Limite a > 768 px parce que c'est ce qui a ete demande, et parce que sur
+   telephone l'invite tombe sur une zone plus chargee ou l'aplat se
+   remarquerait davantage. -------------------------------------------------- */
+/* ESSAI EN COURS (29/08) : voile plein ecran au lieu de la pastille.
+   Pour revenir a la pastille, remettre exactement ceci et supprimer le bloc
+   `position:fixed` ci-dessous :
+
+     [data-cue]{
+       padding:calc(15*var(--u)) calc(20*var(--u)) calc(13*var(--u)) !important;
+       border-radius:calc(26*var(--u));
+       background:rgba(0,0,0,.42);
+     }
+
+   Le voile est en `position:fixed; inset:0` et NON en `width:100vw` centre :
+   `100vw` compte la barre de defilement, ce qui aurait remis le debordement
+   horizontal deja corrige trois fois sur ce site. `fixed` evite le probleme.
+   L'invite garde `pointer-events:none`, donc le voile n'intercepte aucun clic,
+   et son opacite reste pilotee par le scroll (elle tombe a 0 apres 34 % du
+   hero) : le voile se leve tout seul quand on descend.
+   -------------------------------------------------------------------------- */
+@media (min-width:769px){
+  [data-cue]{
+    position:fixed !important;
+    inset:0 !important;
+    transform:none !important;
+    justify-content:center !important;
+    padding:0 !important;
+    border-radius:0;
+    background:rgba(0,0,0,.42);
+  }
+}
 
 /* --------------------------------------------------------------------------
    13. L'INVITE A DEFILER — fuchsia, sans halo

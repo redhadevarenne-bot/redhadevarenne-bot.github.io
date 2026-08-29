@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pixovery — intro télé, v1</title>
+<style>
+  :root{
+    --rose:#FA2DB9; --rose-clair:#FF7AD4; --violet:#8F2BFF; --violet-b:#7A01FF;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#000;color:#fff;
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+
+  /* LA PISTE. Le decor est colle pendant toute sa hauteur : c'est le
+     defilement qui avance la sequence, image par image, jamais une horloge. */
+  [data-tvpiste]{position:relative;height:calc(100vh + 420vh)}
+  [data-tvcolle]{position:sticky;top:0;height:100vh;overflow:hidden;background:#000}
+
+  /* LA SCENE. Rapport 16/9 verrouille, dimensionnee pour couvrir l'ecran, et
+     mise a l'echelle autour du CENTRE DE L'ECRAN de la tele — c'est ce point
+     qui doit rester immobile pendant qu'on entre dedans. */
+  /* La scene est posee en haut a gauche et placee entierement par le JS :
+     l'echelle seule ne suffit pas. Mettre a l'echelle autour du centre de
+     l'ecran garde ce centre immobile — or il n'est pas au milieu du viewport
+     (le verre est a 44 % de la scene, pas a 50 %). A l'arrivee, l'ecran
+     restait donc decale et laissait une bande noire sur un cote. On calcule
+     la translation pour que le centre du verre rejoigne le centre de l'ecran
+     au fil de l'entree. */
+  [data-scene]{position:absolute;left:0;top:0;transform-origin:0 0;
+    transform:translate(var(--tx,0px),var(--ty,0px)) scale(var(--sc,1));
+    opacity:var(--nait,1);will-change:transform,opacity}
+  [data-plaque]{display:block;width:100%;height:100%;object-fit:cover}
+
+  /* L'ECRAN. Rectangle mesure sur la plaque, en pourcentage de la scene.
+     Tout ce qui se passe dedans est empile la : le site en dessous, le bug
+     par-dessus. */
+  [data-ecran]{position:absolute;overflow:hidden;
+    left:var(--ex);top:var(--ey);width:var(--ew);height:var(--eh);
+    border-radius:2.4% / 3.2%;
+    background:#08000a}
+  /* L'ALLUMAGE. Un tube ne s'allume pas en fondu : l'image nait d'une bande
+     horizontale qui s'ouvre. On ecrase donc verticalement tout le contenu de
+     l'ecran au demarrage, et on l'ouvre. */
+  [data-ecran] canvas, [data-site]{
+    transform:scaleY(var(--ouvre,1));transform-origin:50% 50%}
+  [data-ecran] canvas{position:absolute;inset:0;width:100%;height:100%;display:block;
+    opacity:var(--bug,0)}
+  /* le trait blanc de l'amorcage, juste avant que la bande s'ouvre */
+  [data-trait]{position:absolute;left:0;right:0;top:50%;height:2px;
+    transform:translateY(-50%) scaleX(var(--traitx,0));
+    background:linear-gradient(90deg,rgba(255,255,255,0),#fff 18%,#fff 82%,rgba(255,255,255,0));
+    box-shadow:0 0 18px rgba(255,150,225,.9);opacity:var(--trait,0);pointer-events:none}
+
+  /* LA LUMIERE DE L'ECRAN.
+     Un ecran allume dans une piece noire n'eclaire pas que lui-meme : il jette
+     sa lumiere sur le cadre, sur le sol, sur le mur. Sans ca, le bug a l'air
+     colle sur une photo — c'est ce qui manquait.
+
+     Deux couches, et elles ne font pas le meme travail :
+     - [data-lueur] est le halo serre autour du verre, qui mange le cadre.
+     - [data-jet] est la nappe large, en fusion d'ecrans (mix-blend-mode:
+       screen), qui eclaire tout le decor. Elle est DANS la scene, donc elle
+       suit la tele quand on entre dedans.
+     Les deux battent avec le signal : la lumiere d'un ecran n'est jamais fixe. */
+  [data-lueur]{position:absolute;inset:-18%;pointer-events:none;z-index:1;
+    background:radial-gradient(58% 58% at 50% 50%,
+      rgba(250,45,185,.62) 0%, rgba(143,43,255,.26) 44%, rgba(0,0,0,0) 76%);
+    filter:blur(30px);opacity:var(--lum,0)}
+  [data-jet]{position:absolute;left:-60%;top:-70%;width:220%;height:240%;
+    pointer-events:none;mix-blend-mode:screen;opacity:var(--jet,0);
+    background:
+      radial-gradient(38% 30% at 50% 46%, rgba(255,120,215,.55) 0%, rgba(160,50,255,.20) 46%, rgba(0,0,0,0) 72%),
+      radial-gradient(70% 52% at 50% 52%, rgba(190,60,230,.20) 0%, rgba(0,0,0,0) 76%);
+    filter:blur(46px)}
+
+  /* LE SITE, sous le bug. Ici un decor de remplacement : dans le vrai site
+     c'est le hero qui se trouve a cette place. */
+  [data-site]{position:absolute;inset:0;opacity:var(--site,0);
+    background:
+      radial-gradient(70% 90% at 78% 40%, rgba(143,43,255,.42) 0%, rgba(0,0,0,0) 62%),
+      radial-gradient(60% 80% at 20% 70%, rgba(250,45,185,.20) 0%, rgba(0,0,0,0) 60%),
+      linear-gradient(160deg,#170a25 0%,#0b0412 60%,#000 100%);
+    display:flex;flex-direction:column;justify-content:center;
+    padding:0 8%}
+  [data-site] h1{margin:0;font-size:clamp(28px,7cqw,84px);line-height:.95;
+    letter-spacing:-.02em;text-transform:uppercase;font-weight:800}
+  [data-site] h1 em{font-style:normal;color:#B07BFF}
+  [data-site] p{margin:2.2% 0 0;opacity:.8;font-size:clamp(11px,1.6cqw,18px)}
+  [data-site] span{display:inline-block;margin-top:4%;padding:.9em 1.6em;
+    border-radius:.7em;background:linear-gradient(176deg,#F4237E,#CC005F);
+    font-size:clamp(9px,1.3cqw,14px);font-weight:700;letter-spacing:.08em;
+    text-transform:uppercase;align-self:flex-start}
+
+  /* Reperes de calage, actives par ?cadre */
+  html[data-cadre] [data-ecran]{outline:2px solid #00ff88}
+
+  /* LE NOIR DE SORTIE. La sequence ne doit pas se terminer sur une image :
+     elle doit rendre un ecran NOIR, sinon le raccord avec le site se voit.
+     C'est le noir qui fait la couture — on sort de la tele par le vide, et
+     le site s'allume ensuite depuis ce meme vide. */
+  [data-tvcolle] [data-noir]{position:absolute;inset:0;background:#000;
+    pointer-events:none;opacity:var(--noir,0);z-index:5}
+
+  /* le decor de remplacement ne sert qu'a la mise au point : ?site */
+  [data-site]{display:none}
+  html[data-site] [data-site]{display:flex}
+
+  /* LA LANDING, apres la piste. Elle commence par du NOIR : c'est la couture.
+     La piste se termine sur un ecran noir, la landing demarre sur le meme
+     noir, et le hero s'allume dedans. On ne voit donc jamais un raccord —
+     juste une lumiere qui revient. Dans le vrai site, c'est le hero qui est
+     ici, et les lettres tombent a ce moment-la. */
+  [data-suite]{position:relative;min-height:130vh;background:#000;overflow:hidden}
+  [data-suite] > div{position:sticky;top:0;height:100vh;
+    display:flex;flex-direction:column;justify-content:center;padding:0 9%;
+    background:
+      radial-gradient(70% 90% at 78% 40%, rgba(143,43,255,.42) 0%, rgba(0,0,0,0) 62%),
+      radial-gradient(60% 80% at 20% 70%, rgba(250,45,185,.20) 0%, rgba(0,0,0,0) 60%),
+      linear-gradient(160deg,#170a25 0%,#0b0412 60%,#000 100%);
+    opacity:var(--jour,0)}
+  [data-suite] h1{margin:0;font-size:clamp(40px,7vw,104px);line-height:.92;
+    letter-spacing:-.02em;text-transform:uppercase;font-weight:800}
+  [data-suite] h1 em{font-style:normal;color:#B07BFF}
+  [data-suite] p{margin:22px 0 0;opacity:.82;font-size:clamp(13px,1.3vw,19px)}
+  [data-suite] span{display:inline-block;margin-top:34px;padding:.95em 1.9em;
+    border-radius:.7em;background:linear-gradient(176deg,#F4237E,#CC005F);
+    font-size:clamp(10px,.9vw,14px);font-weight:700;letter-spacing:.09em;
+    text-transform:uppercase;align-self:flex-start}
+
+  [data-jauge]{position:fixed;left:14px;bottom:14px;z-index:9;
+    font:12px ui-monospace,monospace;color:#ff7ad4;background:rgba(0,0,0,.5);
+    padding:6px 9px;border-radius:6px;pointer-events:none}
+</style>
+</head>
+<body>
+
+<div data-tvpiste>
+  <div data-tvcolle>
+    <div data-scene>
+      <img data-plaque src="/assets/tv-plate.webp" alt="" width="1280" height="720">
+      <i data-jet></i>
+      <div data-ecran style="container-type:inline-size">
+        <div data-site>
+          <h1>Faisons<br>décoller<br>vos <em>idées</em></h1>
+          <p>Bienvenue sur Pixovery.<br>Création graphique &amp; direction artistique</p>
+          <span>Voir mes projets</span>
+        </div>
+        <canvas data-bug width="640" height="480"></canvas>
+        <i data-trait></i>
+        <i data-lueur></i>
+      </div>
+    </div>
+    <i data-noir></i>
+  </div>
+</div>
+<div data-suite>
+  <div>
+    <h1>Faisons<br>décoller<br>vos <em>idées</em></h1>
+    <p>Bienvenue sur Pixovery.<br>Création graphique &amp; direction artistique</p>
+    <span>Voir mes projets</span>
+  </div>
+</div>
+<div data-jauge></div>
+
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <filter id="pxRouge" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+  </filter>
+  <filter id="pxCyan" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
+  </filter>
+</svg>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ------------------------------------------------------------------
+     LE CALAGE DU VERRE.
+
+     Premiere mesure faite a l'oeil sur la plaque : fausse. Refaite sur une
+     capture ou la boite et le verre sont visibles ENSEMBLE — la bande noire
+     qui depassait autour du bug donnait l'ecart au pixel pres. Releve, en
+     pixels de la plaque 1280x720 : x[285-836], y[128-517].
+
+     Un tube n'est pas un rectangle : il est bombe, et chaque bord avance au
+     MILIEU et recule aux coins. Les valeurs ci-dessous sont celles du milieu
+     des bords, pour que le bug remplisse tout le verre visible ; les coins
+     sont rattrapes par un rayon plus franc, qui imite le galbe.
+     ------------------------------------------------------------------ */
+  var EX = 281/1280, EY = 121/720, EW = 560/1280, EH = 401/720;
+
+  var piste  = document.querySelector('[data-tvpiste]');
+  var colle  = document.querySelector('[data-tvcolle]');
+  var suite  = document.querySelector('[data-suite] > div');
+  var scene  = document.querySelector('[data-scene]');
+  var ecran  = document.querySelector('[data-ecran]');
+  var cv     = document.querySelector('[data-bug]');
+
+  /* le logo : il ne se contente pas d'apparaitre par-dessus, il est dessine
+     DANS le signal, avant les tranches et la separation RVB. Il subit donc la
+     meme corruption que le reste — c'est ce qui fait croire qu'il est diffuse
+     et non colle. */
+  var logo = new Image(), logoPret = false;
+  logo.onload = function(){ logoPret = true; vue = -1; rendu(); };
+  logo.src = '/assets/logo-pixovery.webp';
+  var jauge  = document.querySelector('[data-jauge]');
+  var cx     = cv.getContext('2d');
+
+  /* TROIS ECRITURES DU BUG. Elles ne different pas par les reglages mais par
+     la FORME du defaut : des blocs, des dechirures, ou une onde. On choisit
+     avec ?bruit=blocs|lignes|ondes|neige. */
+  var MODE = (location.search.match(/[?&]bruit=(\w+)/) || [])[1] || 'grille';
+
+  if(/[?&]cadre/.test(location.search))
+    document.documentElement.setAttribute('data-cadre','1');
+  if(/[?&]site/.test(location.search))
+    document.documentElement.setAttribute('data-site','1');
+
+  var jet = document.querySelector('[data-jet]');
+  jet.style.left = ((EX+EW/2)*100 - 110)+'%';
+  jet.style.top  = ((EY+EH/2)*100 - 120)+'%';
+
+  ecran.style.setProperty('--ex', (EX*100)+'%');
+  ecran.style.setProperty('--ey', (EY*100)+'%');
+  ecran.style.setProperty('--ew', (EW*100)+'%');
+  ecran.style.setProperty('--eh', (EH*100)+'%');
+  scene.style.setProperty('--ox', ((EX+EW/2)*100)+'%');
+  scene.style.setProperty('--oy', ((EY+EH/2)*100)+'%');
+
+  /* la scene couvre l'ecran, rapport 16/9 verrouille */
+  var SC_FIN = 1, SW = 0, SH = 0, CX = 0, CY = 0, PX0 = 0, PY0 = 0;
+  function mesure(){
+    var vw = innerWidth, vh = innerHeight;
+    var w = vw, h = w*9/16;
+    if(h < vh){ h = vh; w = h*16/9; }
+    scene.style.width  = w+'px';
+    scene.style.height = h+'px';
+    SW = w; SH = h;
+    CX = (EX+EW/2)*w; CY = (EY+EH/2)*h;      /* centre du verre, dans la scene */
+    PX0 = (vw-w)/2 + CX; PY0 = (vh-h)/2 + CY; /* ou il se trouve au depart */
+    /* echelle finale : le verre doit couvrir tout l'ecran, avec un peu de rab */
+    SC_FIN = Math.max(vw/(EW*w), vh/(EH*h)) * 1.06;
+  }
+
+  /* ------------------------------------------------------------------
+     LE BUG GRAPHIQUE. Rien n'est filme : tout est calcule, donc aucune
+     couture, aucun quadrant, et le rose est le vrai rose du site.
+
+     Deux regles reprises du hero :
+     - le tirage est DETERMINISTE. Une meme position de defilement rend
+       exactement la meme image, sinon tout grelotte a la molette.
+     - on ne redessine QUE si le numero d'image a change. Un bug se lit a
+       une quinzaine d'images par seconde, pas a soixante.
+     ------------------------------------------------------------------ */
+  /* LA RESOLUTION DU SIGNAL.
+     Le canvas faisait 640x480 en dur. Une fois entre dans l'ecran, il etait
+     etire sur toute la largeur du navigateur : trois fois son format. Tout
+     devenait mou — des bandes molles, un degrade sale, plus aucune texture.
+     C'est la meme faute que sur le filaire du hero : on agrandit une image
+     trop petite.
+     Le canvas est donc redimensionne sur ce qu'il MESURE vraiment a l'ecran.
+     Et comme les motifs sont donnes en pixels absolus, ils gardent leur
+     finesse quand on entre : le grain d'un ecran appartient a l'ecran, il ne
+     grossit pas parce qu'on s'approche. */
+  var pet = document.createElement('canvas');
+  pet.width = 200; pet.height = 150;
+  var cp = pet.getContext('2d');
+  var img = cp.createImageData(200, 150);
+
+  var W = cv.width, H = cv.height;
+  var buf = document.createElement('canvas');
+  buf.width = W; buf.height = H;      /* sans ca, buf reste a 300x150 : on ne
+                                         dessinait que le coin haut-gauche */
+  var cb = buf.getContext('2d');
+  var dprE = Math.min(devicePixelRatio || 1, 2);
+
+  function taille(){
+    var r = cv.getBoundingClientRect();
+    var w = Math.round(Math.min(1700, Math.max(560, r.width  * dprE)));
+    var h = Math.round(Math.min(1300, Math.max(420, r.height * dprE)));
+    /* on ne rebascule que par paliers de 20 % : redimensionner un canvas
+       l'efface, et le faire a chaque image couterait une saccade */
+    if(Math.abs(w - W) / W < 0.2 && Math.abs(h - H) / H < 0.2) return false;
+    W = w; H = h;
+    cv.width = W; cv.height = H;
+    buf.width = W; buf.height = H;
+    pet.width = Math.max(120, (W/6)|0); pet.height = Math.max(90, (H/6)|0);
+    img = cp.createImageData(pet.width, pet.height);
+    return true;
+  }
+
+  function graine(a){
+    return function(){
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  var ROSE = '250,45,185', VIOLET = '150,40,255', CLAIR = '255,214,245';
+
+  /* ---------- ecriture 1 : LA NEIGE ------------------------------------
+     Aucun rectangle. Un grain fin, calcule pixel par pixel a demi-resolution
+     puis agrandi en douceur : ce qui reste a l'ecran est une poussiere, pas
+     une mosaique. C'est la neige d'un tube, teintee au rose du site. */
+  function neige(r, force){
+    var d = img.data, n = d.length;
+    for(var i=0;i<n;i+=4){
+      var v = r();
+      var a = v*v;                       /* la plupart des pixels restent noirs */
+      var t = r();
+      if(t < .58){ d[i]=250; d[i+1]=45;  d[i+2]=185; }
+      else if(t < .84){ d[i]=150; d[i+1]=40; d[i+2]=255; }
+      else { d[i]=255; d[i+1]=214; d[i+2]=245; }
+      d[i+3] = (a * 255 * force) | 0;
+    }
+    cp.putImageData(img, 0, 0);
+    cb.imageSmoothingEnabled = true;
+    cb.drawImage(pet, 0, 0, W, H);
+  }
+
+  /* ---------- ecriture 4 : LA GRILLE -----------------------------------
+     Une grille en perspective qui avance vers nous. Rien de bruite : des
+     lignes, un point de fuite, et un horizon.
+
+     Deux points qui font tout :
+     - Les lignes de profondeur ne sont PAS reparties regulierement a l'ecran.
+       En perspective, une ligne posee a la distance k se projette en
+       y = horizon + C/k : les lointaines se tassent contre l'horizon, les
+       proches s'ecartent. Repartir les y regulierement donnerait une echelle
+       de barreaux, pas un sol.
+     - Le defilement se fait en faisant AVANCER k d'un pas fractionnaire. Quand
+       la phase a parcouru 1, chaque ligne occupe la place de la precedente :
+       la boucle est invisible, sans raccord a masquer.
+     Les fuyantes, elles, sont droites : elles partent toutes du point de fuite
+     et s'ecartent regulierement au bord bas. */
+  function grille(r, force, f, av){
+    var hz = H * 0.40;                 /* l'horizon */
+    var vx = W / 2;                    /* le point de fuite */
+    var C  = (H - hz) * 1.0;
+
+    cb.fillStyle = 'rgba(6,1,12,1)';
+    cb.fillRect(0, 0, W, H);
+
+    /* la lueur d'horizon : c'est elle qui donne la profondeur, pas les lignes */
+    var gh = cb.createLinearGradient(0, hz - H*0.16, 0, hz + H*0.10);
+    gh.addColorStop(0,   'rgba(120,30,220,0)');
+    gh.addColorStop(0.62,'rgba(180,70,255,'+(0.30*force)+')');
+    gh.addColorStop(0.78,'rgba(255,190,255,'+(0.55*force)+')');
+    gh.addColorStop(1,   'rgba(120,30,220,0)');
+    cb.fillStyle = gh; cb.fillRect(0, hz - H*0.16, W, H*0.26);
+
+    var trait = Math.max(1, Math.round(W/520));
+    cb.lineCap = 'butt';
+
+    /* les fuyantes */
+    var NV = 13, pasBas = W * 0.115;
+    for(var i = -NV; i <= NV; i++){
+      var xb = vx + i * pasBas;
+      var a = 0.5 * force * (1 - Math.min(1, Math.abs(i)/(NV+2)) * 0.55);
+      cb.strokeStyle = 'rgba(196,92,255,'+a.toFixed(3)+')';
+      cb.lineWidth = trait;
+      cb.beginPath(); cb.moveTo(vx, hz); cb.lineTo(xb, H); cb.stroke();
+    }
+
+    /* les lignes de profondeur */
+    var phase = av % 1;
+    for(var k = 1; k <= 26; k++){
+      var kk = k - phase;
+      if(kk <= 0.05) continue;
+      var y = hz + C / kk;
+      if(y > H + 4) continue;
+      var proche = Math.min(1, 1 / kk);              /* 1 tout pres, 0 au loin */
+      var a2 = force * (0.22 + 0.62 * proche);
+      cb.strokeStyle = 'rgba(214,120,255,'+a2.toFixed(3)+')';
+      cb.lineWidth = trait * (0.8 + 2.0 * proche);
+      cb.beginPath(); cb.moveTo(0, y); cb.lineTo(W, y); cb.stroke();
+      /* le coeur clair du trait : un neon a un cur plus clair que son halo */
+      cb.strokeStyle = 'rgba(255,222,255,'+(a2*0.75).toFixed(3)+')';
+      cb.lineWidth = Math.max(1, trait * (0.3 + 0.7 * proche));
+      cb.beginPath(); cb.moveTo(0, y); cb.lineTo(W, y); cb.stroke();
+    }
+  }
+
+  /* ---------- ecriture 2 : LES DECHIRURES ------------------------------
+     Que des bandes PLEINE LARGEUR. Un rectangle flotte et se voit comme un
+     objet ; une bande qui traverse tout se lit comme une ligne de balayage
+     qui a decroche. Aucune forme ne se detache donc du fond. */
+  function dechirures(r, force){
+    /* Des bandes FRANCHES, sur du noir. La version precedente empilait des
+       degrades doux sur toute la largeur : de pres ca passait, en plein ecran
+       ca donnait un dessus-de-lit raye. Il faut du contraste et des bords
+       nets — une ligne qui a decroche est vive, et ce qu'il y a autour est
+       NOIR. La finesse est donnee en pixels absolus, donc elle ne change pas
+       quand on entre dans l'ecran. */
+    var y = 0;
+    while(y < H){
+      var h = 1 + r()*9;                       /* bandes fines */
+      if(r() < .40*force){
+        var c = r() < .58 ? ROSE : (r() < .80 ? VIOLET : CLAIR);
+        var a1 = 0.10 + r()*0.62*force;
+        /* la bande n'occupe pas toute la largeur : elle commence et finit
+           quelque part. C'est ce qui la fait ressembler a un morceau de
+           signal, et non a une rayure de peinture. */
+        var x0 = r() < .55 ? 0 : r()*W*0.5;
+        var x1 = r() < .55 ? W : x0 + W*(0.25 + r()*0.75);
+        var g = cb.createLinearGradient(x0,0,x1,0);
+        g.addColorStop(0, 'rgba('+c+',0)');
+        g.addColorStop(0.06, 'rgba('+c+','+a1+')');
+        g.addColorStop(0.94, 'rgba('+c+','+(a1*0.72)+')');
+        g.addColorStop(1, 'rgba('+c+',0)');
+        cb.fillStyle = g;
+        cb.fillRect(x0|0, y|0, (x1-x0)|0, h|0);
+        /* un liset vif sur un bord : c'est lui qui donne le tranchant */
+        if(r() < .34){
+          cb.fillStyle = 'rgba('+CLAIR+','+Math.min(1,(a1*1.5))+')';
+          cb.fillRect(x0|0, y|0, (x1-x0)|0, 1);
+        }
+      }
+      y += h;
+    }
+  }
+
+  /* ---------- ecriture 3 : L'ONDE --------------------------------------
+     Le signal ondule. On recopie l'image ligne par ligne avec un decalage
+     sinusoidal : rien n'est ajoute, tout est DEFORME. C'est la reception qui
+     tremble, pas des pixels qui tombent. */
+  function onde(r, force, f){
+    var src = document.createElement('canvas');
+    src.width = W; src.height = H;
+    src.getContext('2d').drawImage(buf, 0, 0);
+    cb.clearRect(0,0,W,H);
+    var A = W * 0.035 * force, k = 0.055 + r()*0.03, ph = f * 0.7;
+    var rup = r() < 0.5 ? -1 : 1, ry = r()*H, rh = 10 + r()*40;
+    for(var y=0; y<H; y+=2){
+      var dx = Math.sin(y*k + ph) * A + Math.sin(y*0.011 + ph*0.4) * A * 1.6;
+      if(y > ry && y < ry + rh) dx += rup * W * 0.09 * force;   /* la bande qui decroche */
+      cb.drawImage(src, 0, y, W, 2, dx, y, W, 2);
+    }
+  }
+
+  function bug(f, force, lg, efface){
+    var r = graine(f * 9781 + 1013);
+    cb.clearRect(0,0,W,H);
+
+    /* fond : le noir d'un tube allume, pas un noir de page */
+    cb.fillStyle = 'rgba(20,2,16,1)'; cb.fillRect(0,0,W,H);
+
+    /* --- le fond du signal, selon l'ecriture choisie --- */
+    if(MODE === 'grille'){
+      grille(r, force, f, f * 0.34);
+    } else if(MODE === 'neige'){
+      neige(r, force);
+    } else if(MODE === 'lignes' || MODE === 'ondes'){
+      dechirures(r, force);
+    } else {
+      /* blocs : des rectangles courts et larges */
+      var n = Math.round((90 + r()*70) * force);
+      for(var i=0;i<n;i++){
+        var bw = 4 + r()*W*0.16, bh = 2 + r()*10;
+        var x = r()*W, y = r()*H, t = r();
+        var c = t < .52 ? ROSE : (t < .82 ? VIOLET : CLAIR);
+        cb.fillStyle = 'rgba('+c+','+(0.10 + r()*0.55*force)+')';
+        cb.fillRect(x|0, y|0, bw|0, bh|0);
+      }
+      var m = Math.round((5 + r()*7) * force);
+      for(var j=0;j<m;j++){
+        var sq = 12 + r()*54;
+        cb.fillStyle = 'rgba('+(r()<.6?ROSE:VIOLET)+','+(0.12 + r()*0.4*force)+')';
+        cb.fillRect((r()*W)|0, (r()*H)|0, sq|0, (sq*(0.4+r()*0.9))|0);
+      }
+    }
+
+    /* 2 bis. LE LOGO, pose dans le signal.
+          Il n'arrive pas d'un coup : il accroche, papillote, puis se fait
+          manger par bandes. Un logo qui apparait en fondu ressemble a une
+          incrustation ; un logo qui accroche ressemble a une reception. */
+    if(lg > 0.01 && logoPret){
+      var lw = W * 0.62, lh = lw * (logo.height / logo.width);
+      var lx = (W - lw)/2;
+      /* en grille, le logo se pose dans le ciel, au-dessus de l'horizon */
+      var ly = MODE === 'grille' ? (H*0.40 - lh) * 0.62 : (H - lh)/2;
+      /* l'accrochage : tant que lg est bas, le logo tremble et clignote */
+      var trem = (1 - lg) * W * 0.06;
+      cb.save();
+      /* deux passes : une copie decalee, sombre, qui fait l'ombre du signal,
+         puis le logo net par-dessus. */
+      cb.globalAlpha = cl(lg * 0.35, 0, 1);
+      cb.drawImage(logo, lx + trem*0.8 + 3, ly + 2, lw, lh);
+      cb.globalAlpha = cl(lg * (0.78 + 0.22*r()), 0, 1);
+      cb.drawImage(logo, lx + (r()-0.5)*trem, ly + (r()-0.5)*trem*0.4, lw, lh);
+      cb.restore();
+      /* l'effacement : on mange le logo par bandes horizontales, jamais en
+         fondu. Une image numerique qui part s'en va par morceaux. */
+      if(efface > 0.01){
+        cb.save();
+        cb.globalCompositeOperation = 'destination-out';
+        var e = Math.round(26 * efface);
+        for(var z2=0; z2<e; z2++){
+          var by = ly + r()*lh, bh2 = 2 + r()*lh*0.22;
+          cb.fillRect(lx - 4, by, lw + 8, bh2);
+        }
+        cb.restore();
+      }
+    }
+
+    /* 3. les tranches deplacees. On recopie des bandes du dessin sur
+          elles-memes, decalees : c'est le dechirement d'image. */
+    if(MODE === 'grille'){
+      /* rien : une grille n'a pas de tranches deplacees, elle serait sale */
+    } else if(MODE === 'ondes'){
+      onde(r, force, f);
+    } else if(MODE !== 'lignes'){
+      var q = Math.round((6 + r()*8) * force);
+      for(var k=0;k<q;k++){
+        var yy = (r()*H)|0, hh = (2 + r()*26)|0;
+        var dx = (r()-0.5) * W * 0.55 * force;
+        cb.drawImage(buf, 0, yy, W, hh, dx, yy, W, hh);
+      }
+    } else {
+      /* en dechirures : le decalage se fait aussi en bandes pleine largeur */
+      var q2 = Math.round((4 + r()*5) * force);
+      for(var k2=0;k2<q2;k2++){
+        var yy2 = (r()*H)|0, hh2 = (4 + r()*40)|0;
+        cb.drawImage(buf, 0, yy2, W, hh2, (r()-0.5)*W*0.4*force, yy2, W, hh2);
+      }
+    }
+
+    /* 4. deux ou trois lignes vives : le balayage qui accroche */
+    var l = MODE === 'grille' ? 0 : 1 + ((r()*3)|0);
+    for(var v=0; v<l; v++){
+      var ly = (r()*H)|0;
+      var g = cb.createLinearGradient(0,ly,W,ly);
+      g.addColorStop(0,   'rgba('+ROSE+',0)');
+      g.addColorStop(0.5, 'rgba('+CLAIR+','+(0.55*force)+')');
+      g.addColorStop(1,   'rgba('+ROSE+',0)');
+      cb.fillStyle = g;
+      cb.fillRect(0, ly, W, 1 + ((r()*2)|0));
+    }
+
+    /* --- report sur le canvas visible, avec la separation RVB --- */
+    cx.clearRect(0,0,W,H);
+    cx.drawImage(buf,0,0);
+    if(MODE !== 'grille'){
+      var ec = W * (0.004 + r()*0.016) * force;
+      cx.globalCompositeOperation = 'lighter';
+      cx.globalAlpha = 0.55;
+      cx.filter = 'url(#pxRouge)';  cx.drawImage(buf, -ec, 0);
+      cx.filter = 'url(#pxCyan)';   cx.drawImage(buf,  ec, 0);
+      cx.filter = 'none';
+      cx.globalAlpha = 1;
+      cx.globalCompositeOperation = 'source-over';
+    }
+
+    /* 5. les lignes de balayage du tube, par-dessus tout le reste */
+    cx.globalCompositeOperation = 'multiply';
+    cx.fillStyle = 'rgba(120,120,145,.5)';
+    var pas = Math.max(3, Math.round(3 * dprE));
+    for(var y2=0; y2<H; y2+=pas) cx.fillRect(0,y2,W,Math.max(1,pas-2));
+    cx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ------------------------------------------------------------------
+     LA CHOREGRAPHIE, en fractions de la piste.
+
+       0    -> 0,08   la tele est eteinte, on la regarde
+       0,06 -> 0,18   allumage : le tube prend, le bug s'installe
+       0,16 -> 0,80   on entre dans l'ecran
+       0,72 -> 1      le bug se dissipe, le site est dessous
+
+     N = 78 images sur toute la course : c'est la cadence d'un bug, pas
+     celle d'un ecran.
+     ------------------------------------------------------------------ */
+  var N = 96, vue = -1;
+  var ALLUME_A = 0.05, ALLUME_B = 0.15;
+  var LOGO_A = 0.17, LOGO_B = 0.29;   /* il accroche */
+  var LOGO_C = 0.44, LOGO_D = 0.54;   /* il se fait manger */
+  var ZOOM_A = 0.50, ZOOM_B = 0.90;
+  var SORTIE_A = 0.78;
+  var NAIT_A = 0.005, NAIT_B = 0.10;   /* la tele se pose */
+  var NOIR_A = 0.84, NOIR_B = 0.97;    /* et on ressort par le noir */
+
+  function cl(v,a,b){ return v<a?a:(v>b?b:v); }
+  function lisse(t){ return t*t*(3-2*t); }
+  function entre(v,a,b){ return cl((v-a)/(b-a),0,1); }
+
+  function rendu(){
+    var course = piste.offsetHeight - innerHeight;
+    var y = scrollY || document.documentElement.scrollTop || 0;
+    var p = cl(y / Math.max(1,course), 0, 1);
+
+    /* allumage */
+    var allume = entre(p, ALLUME_A, ALLUME_B);
+    /* sortie : le bug se dissipe et laisse voir le site */
+    var sortie = entre(p, SORTIE_A, 1);
+    /* LE CALME. Pendant que le logo tient, le signal se stabilise : le bruit
+       tombe des deux tiers. Sans ce temps mort, le logo reste noye et on ne
+       le lit jamais — c'est le contraste avec le bruit qui le fait exister,
+       pas sa luminosite. Il repart des qu'on commence a le manger. */
+    var calme  = entre(p, LOGO_B - 0.03, LOGO_B + 0.03) * (1 - entre(p, LOGO_C - 0.02, LOGO_C + 0.04));
+    var force  = allume * (1 - sortie*0.86) * (1 - 0.64*calme);
+
+    /* LA NAISSANCE. La tele ne doit pas etre la au premier pixel : elle
+       emerge du noir en reculant legerement, comme si l'oeil s'habituait a
+       l'obscurite. Une apparition franche fait sursauter et casse le calme
+       qu'on installe juste apres. */
+    var nait = entre(p, NAIT_A, NAIT_B);
+    var ne = lisse(nait);
+
+    /* le zoom : une ease-in, on part lentement puis on plonge */
+    var z = entre(p, ZOOM_A, ZOOM_B);
+    var sc = 1 + (SC_FIN - 1) * (z*z*(3-2*z)) * (0.35 + 0.65*z);
+    /* le petit recul d'arrivee : on part 6 % trop pres, on se pose */
+    sc *= 1 + 0.06 * (1 - ne);
+
+    /* le verre rejoint le centre du viewport au fil de l'entree */
+    var vx = innerWidth/2, vy = innerHeight/2;
+    var px = PX0 + (vx - PX0) * z;
+    var py = PY0 + (vy - PY0) * z;
+    scene.style.setProperty('--sc', sc.toFixed(4));
+    scene.style.setProperty('--tx', (px - sc*CX).toFixed(2)+'px');
+    scene.style.setProperty('--ty', (py - sc*CY).toFixed(2)+'px');
+    scene.style.setProperty('--nait', ne.toFixed(3));
+    colle.style.setProperty('--noir', lisse(entre(p, NOIR_A, NOIR_B)).toFixed(3));
+
+    /* allumage : le trait blanc, puis la bande qui s'ouvre */
+    var ouvre = entre(p, ALLUME_A + 0.02, ALLUME_A + 0.09);
+    ecran.style.setProperty('--ouvre', (0.012 + 0.988*lisse(ouvre)).toFixed(4));
+    var tr = entre(p, ALLUME_A - 0.015, ALLUME_A + 0.03);
+    ecran.style.setProperty('--traitx', lisse(entre(p, ALLUME_A-0.02, ALLUME_A+0.01)).toFixed(3));
+    ecran.style.setProperty('--trait', (tr < 1 ? tr : Math.max(0, 1 - entre(p, ALLUME_A+0.03, ALLUME_A+0.075))).toFixed(3));
+    ecran.style.setProperty('--bug', (allume * (1 - sortie)).toFixed(3));
+    ecran.style.setProperty('--site', lisse(sortie).toFixed(3));
+    /* le numero d'image : tout ce qui suit s'en sert */
+    var f = Math.round(p * (N-1));
+
+    /* le battement : la lumiere d'un ecran vacille avec ce qu'il diffuse.
+       Tirage deterministe, donc la meme position de defilement rend toujours
+       la meme lueur — sinon la piece clignote a la molette. */
+    var rr = graine(f * 7919 + 331);
+    var bat = 0.82 + 0.18*rr() + 0.12*Math.sin(f*0.9);
+    ecran.style.setProperty('--lum', (allume * (1 - sortie*0.55) * bat).toFixed(3));
+    scene.style.setProperty('--jet', (allume * (1 - sortie*0.85) * bat * 0.74).toFixed(3));
+
+    var lg     = entre(p, LOGO_A, LOGO_B) * (1 - entre(p, LOGO_C, LOGO_D));
+    var efface = entre(p, LOGO_C, LOGO_D);
+
+    if(taille()) vue = -1;
+    if(f !== vue || force < 0.02){
+      vue = f;
+      bug(f, Math.max(0.06, force), lg, efface);
+    }
+
+    /* LE JOUR QUI REVIENT. La landing s'allume sur les derniers pourcents de
+       la piste, pendant que l'ecran est deja noir : quand la piste se
+       decroche, il n'y a plus rien a raccorder, la page est deja la. */
+    if(suite) suite.style.setProperty('--jour', lisse(entre(p, 0.94, 1)).toFixed(3));
+
+    if(jauge) jauge.textContent =
+      'piste ' + (p*100).toFixed(1) + '%   image ' + f + '/' + (N-1) +
+      '   zoom x' + sc.toFixed(2) + '   logo ' + lg.toFixed(2);
+  }
+
+  var attend = false;
+  function surScroll(){
+    if(attend) return;
+    attend = true;
+    requestAnimationFrame(function(){ attend = false; rendu(); });
+  }
+
+  addEventListener('scroll', surScroll, {passive:true});
+  addEventListener('resize', function(){ mesure(); taille(); vue = -1; rendu(); });
+  mesure(); taille(); rendu();
+})();
+</script>
+</body>
+</html>

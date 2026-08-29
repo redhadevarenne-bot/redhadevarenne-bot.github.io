@@ -51,6 +51,108 @@ image, l'ajouter explicitement, et vérifier :
 
 # CE QUI A CHANGÉ LE 29 AOÛT
 
+## IDENTITÉ DANS LE NAVIGATEUR ET AU PARTAGE
+
+**Favicon : il n'en existait aucun.** Le navigateur demandait `/favicon.ico`,
+recevait un 404 et affichait son icône générique — y compris à côté du résultat
+dans Google. Cinq fichiers générés depuis `assets/logo-p.png` (#7806E5), sans
+déformation, **à la racine de `public/`** (donc servis à la racine du site :
+ne les déplace pas dans `assets/`) :
+
+`favicon.ico` (16/32/48 en un fichier, encore lu par Google), `favicon-32.png`,
+`apple-touch-icon.png` (180 px, **fond noir intégré** — iOS ignore la
+transparence et compositerait sur du blanc), `icon-192.png`, `icon-512.png`,
+plus `site.webmanifest` pour Android. Déclarés dans le `<head>` d'`index.html`.
+
+**Image de partage (`og-pixovery.jpg`)** : la ligne du bas disait « France ·
+Suisse · Partout à distance ». Formule bancale, et surtout le seul endroit du
+site qui ne disait pas Genève — alors que c'est ce qu'on voit en premier quand
+on colle le lien. Remplacée par « **Genève · Suisse · France** ».
+
+Retouche faite au pixel : fond reconstruit par **interpolation verticale**
+entre les lignes propres au-dessus et en dessous (un aplat noir laissait une
+arête visible, le dégradé n'étant pas uniforme), zone d'effacement bornée à
+x ≤ 640 car le pot à crayons commence à x=642. Texte recomposé en **Neue Haas
+Display Medium, corps 17 px, interlettrage 2,05 px, #9C9C9F, bord gauche x=73,
+ligne de base y=488** — mesures relevées dans l'image d'origine.
+
+⚠️ **La police d'origine de cette image n'est pas Neue Haas** (probablement
+Barlow ou Montserrat, chargées depuis Google, inaccessibles hors ligne). Le
+rendu est très proche mais pas identique. Si tu refais cette image, pars du
+fichier source de Redha, pas de ce JPEG.
+
+⚠️ **Après toute modification de l'image OG**, forcer le rafraîchissement du
+cache chez Facebook (Sharing Debugger) et LinkedIn (Post Inspector), sinon
+l'ancienne vignette reste affichée pendant des semaines.
+
+## L'INVITE À DÉFILER — deux changements
+
+**1. La bille n'était pas figée, elle était invisible SUR LE POSTE DE TRAVAIL.**
+La règle `@media (prefers-reduced-motion:reduce){ .cueBille{animation:none} }`
+n'avait pas la garde `html:not([data-motion="full"])`. Or « réduire les
+animations » est actif en permanence sur la machine de Redha : la bille restait
+donc immobile même en `?motion=full`, alors qu'elle bougeait pour tous les
+visiteurs. **Même piège que pour les reflets de lunettes** — une `@media`
+ignore l'URL, c'est le JS qui pose `data-motion` sur `<html>`. Corrigé.
+
+Le sens du mouvement n'a pas changé : la bille descend et disparaît, elle ne
+remonte pas. Choix documenté, un aller-retour dirait « ça bouge » là où une
+descente dit « descends ».
+
+**2. Voile plein écran derrière l'invite, > 768 px.** `position:fixed; inset:0`
+en `rgba(0,0,0,.42)`. **Pas** `width:100vw` centré : `100vw` compte la barre de
+défilement et aurait recréé le débordement horizontal déjà corrigé trois fois.
+L'invite garde `pointer-events:none` (le voile n'intercepte aucun clic) et son
+opacité reste pilotée par le scroll — le voile se lève seul après 34 % du hero.
+
+La version pastille arrondie est conservée en commentaire juste au-dessus du
+bloc, prête à recoller.
+
+## SEO — LE SITE EST DÉCLARÉ À GOOGLE ✅
+
+**Search Console : fait.** Propriété `https://www.pixovery.com/` (type « Préfixe
+de l'URL »), compte **pixovery@gmail.com**, validée par **fichier HTML** :
+`pixovery-app/public/google9099546e3a051454.html`.
+
+⚠️ **Ne supprime JAMAIS ce fichier.** Google le revérifie périodiquement ; le
+retirer fait perdre la propriété. Il contient une seule ligne :
+`google-site-verification: google9099546e3a051454.html`.
+
+Restent à confirmer côté Search Console : sitemap `sitemap.xml` soumis, et
+demande d'indexation de l'accueil. Délai normal avant les premières données :
+de quelques jours à trois semaines. Un rapport « Performances » vide au début
+n'est pas un échec.
+
+**Mentions légales : complètes.** Les cinq « à compléter » sont remplis —
+adresse de l'éditeur (25 rue des Glières, 74100 Annemasse), hébergeur GitHub
+Pages / GitHub, Inc. / 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107 /
++1 415 448 6673 (numéro relevé sur un dépôt officiel de GitHub auprès du
+Copyright Office, pas sur un annuaire).
+
+**Texte : une phrase ajoutée dans À propos.** Audit fait le 29/08 : la tête de
+page (title 65 car., description 145, canonique, JSON-LD avec `areaServed`
+Genève / Suisse romande / Suisse / France) est bonne, **mais le corps de la
+page ne disait presque jamais le métier ni la ville** — « Genève » 2 fois,
+« graphiste » 2 fois sur tout le site, un H1 sans mot-clé (`Faisons décoller
+vos idées`, à ne pas changer) et des H2 génériques. Un `title` qui promet
+« Graphiste freelance Genève » au-dessus d'un corps muet est un signal faible.
+
+Ajouté : « **Je travaille avec des marques à Genève, en Suisse romande et en
+France.** » dans le premier paragraphe d'À propos.
+
+⚠️ **Redha vit à Annemasse et ne veut pas le mettre en avant.** La phrase parle
+donc de la zone servie, jamais du domicile — ne la réécris pas en « installé à
+Genève », ce serait faux. À savoir : le JSON-LD déclare déjà
+`Person.address = Annemasse, Haute-Savoie, FR`. **Laisse-le** : invisible pour
+le visiteur, c'est le seul ancrage géographique réel qui rend crédible le
+`areaServed: Genève`. Backlog écarté : cibler « graphiste Annemasse », requête
+sans concurrence, refusé par Redha.
+
+Backlog : domiciliation (~15-25 €/mois) si l'adresse personnelle publiée dans
+les mentions légales devient un problème.
+
+
+
 ## 0. LE PERSO ROSE EST DE RETOUR SUR TÉLÉPHONE
 
 Redha : « sur la version responsive le perso rose fait juste disparaître ».
