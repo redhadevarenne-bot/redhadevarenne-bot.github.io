@@ -51,6 +51,96 @@ image, l'ajouter explicitement, et vérifier :
 
 # CE QUI A CHANGÉ LE 29 AOÛT
 
+## PORTFOLIO : 18 PIÈCES, « LIGHTOSAURUS » AJOUTÉE EN 8ᵉ
+
+Illustration originale (dinosaure à tête d'ampoule, ville néon). Elle comble un
+trou réel : « Illustration » est l'un des quatre services annoncés et le
+portfolio n'en contenait **aucune** — dix-sept identités visuelles et rien pour
+appuyer cette promesse.
+
+**Vignette carrée, agrandissement complet.** Deux fichiers dans
+`public/assets/portfolio/` : `…lightosaurus-dinosaure-neon.webp` (recadrage
+carré 1000×1000, la vignette) et `…-complet.webp` (l'illustration entière, le
+plein écran). Rendu possible par **une ligne** dans `openLb` :
+
+```js
+lbImg.src = m.getAttribute('data-full') || m.currentSrc || m.src;
+```
+
+Les 17 autres pièces n'ont pas `data-full`, elles ne changent donc pas. Le
+recadrage est centré sur le dino (mesuré : x 520→1400 pour un cadre de 1002,
+donc 50 px de marge à gauche et 72 à droite — rien n'est coupé).
+
+Pas de `data-piecetexte` sur cette pièce : sans texte, `openLb` reste en mode
+image avec le curseur en zoom, ce qui est le comportement voulu. En écrire un
+la basculerait automatiquement en fiche deux colonnes.
+
+⚠️ **TROIS CHOSES SUIVENT TOUTE INSERTION DANS LA GRILLE, elles sont en dur :**
+
+1. **Les numéros** `data-piecenum` (01…18) sont écrits dans le JSX. Le compteur
+   « / 18 », lui, se calcule depuis `pieces.length`.
+2. **L'alternance des tons** est stricte : **impair = violet, pair = pink**.
+   Insérer au milieu inverse la parité de tout ce qui suit. Le sur-titre coloré
+   de chaque pièce porte la même couleur en style inline — les deux doivent
+   être changés ensemble.
+3. **Le JSON-LD** contient un `ItemList` des projets : 18 entrées, positions à
+   renuméroter.
+
+**Libellé : « Illustration », pas « Illustration personnelle ».** Tous les
+sur-titres du portfolio nomment une **discipline** (« Identité visuelle »,
+« Création de logo », « Affiche événementielle »), jamais le cadre commercial.
+« Personnelle » introduisait une catégorie inexistante ailleurs et disait au
+visiteur « personne ne me l'a commandée » — une information qui dévalue la
+pièce sans rien apporter.
+
+**Backlog :** une illustration seule au milieu de 17 projets de branding se lit
+comme un accident. Deux ou trois de plus, et ça devient un domaine du travail.
+
+## PERFORMANCE : `global.css` PASSE DE 216 À 114 Ko (−48 %)
+
+Les trois graisses de Neue Haas étaient embarquées en `base64` **dans**
+`global.css`. Sorties vers `/assets/fonts/nhd-500|700|800.woff2` — des fichiers
+qui existaient déjà et que **rien ne référençait**.
+
+Vérifié avant bascule : les trois sont **octet pour octet identiques** aux blocs
+base64 (sha256 comparés). Le rendu ne change pas d'un pixel.
+
+Pourquoi ça comptait, au-delà du poids : une feuille de style **bloque le
+rendu**, donc les polices étaient sur le chemin critique ; et surtout elles ne
+se mettaient plus en cache séparément — **chaque modification d'une ligne de CSS
+faisait retélécharger 103 Ko de polices**. Sur ce projet où le CSS change tous
+les jours, c'était le cas le plus défavorable possible.
+
+⚠️ **Cette section est de l'histoire.** Dans la même journée, Neue Haas a été
+remplacée par **Geist** (voir le point 8) : les trois `nhd-*.woff2` ne servent
+plus, et le `<link rel="preload">` d'`index.html` pointe maintenant sur
+`Geist-Variable.woff2`. Ce qui reste valable, et qui est la vraie leçon : **ne
+remets jamais une police en `base64` dans le CSS**, et garde le `crossorigin`
+sur le preload — il est obligatoire même en même origine, sans lui le fichier
+est téléchargé deux fois.
+
+## LES CINQ CHAMPS DU FORMULAIRE ONT ENFIN DES LIBELLÉS
+
+Ils fonctionnaient au `placeholder` seul : aucun lecteur d'écran n'annonçait
+quoi que ce soit, et cliquer sur l'intitulé ne donnait pas le focus. Ajouté un
+`<label htmlFor>` par champ plus un `id`, avec la classe `.srOnly`.
+
+⚠️ **`.srOnly` est en `position:absolute`, et ce n'est pas un détail.** Le
+formulaire est un flex en colonne et la ligne Nom/Prénom un flex en ligne : un
+`<label>` en flux normal y deviendrait un **élément flex** — la ligne
+Nom/Prénom passerait à quatre colonnes et le `gap` s'appliquerait à chaque
+libellé. Un enfant en `position:absolute` n'est pas un élément flex, donc la
+mise en page ne bouge pas. **Ne remplace jamais cette règle par
+`display:none`** : un champ ainsi masqué n'est pas lu par les lecteurs d'écran
+non plus, on ne ferait que déplacer le problème.
+
+Les `placeholder` sont conservés, ils restent l'indication visuelle.
+
+**Reste à faire sur ce formulaire (visuel, à juger en local) :** le texte du
+placeholder disparaît dès qu'on tape. La vraie réponse est un libellé flottant
+(le mot monte et rétrécit quand le champ se remplit). Non fait : c'est un
+changement de mise en page qui demande d'être vu, pas déduit.
+
 ## IDENTITÉ DANS LE NAVIGATEUR ET AU PARTAGE
 
 **Favicon : il n'en existait aucun.** Le navigateur demandait `/favicon.ico`,
@@ -510,28 +600,45 @@ Puis côté GitHub : dépôt → Settings → Pages → Custom domain =
 navigateur affiche « Non sécurisé », et c'est normal. **Ne pas retirer le
 domaine pour « réessayer »** : ça relance le compteur à zéro.
 
-## 8. LES POLICES NE SONT PAS SOUS LICENCE — à régler
+## 8. LES POLICES — PLUS AUCUN RISQUE DE LICENCE ✅ (29/08)
 
-Deux polices sont chargées, aucune n'est couverte pour un usage commercial :
+**Réglé.** Le projet ne charge plus aucune police commerciale.
 
-- **Newake** (`/assets/fonts/NewakeFont-Demo.otf`) — les gros titres : h1 du
-  hero, titres de sections, noms de projets. Le nom du fichier dit tout :
-  version **DEMO**, gratuite pour un usage **personnel**. Licence web à
-  acheter, une trentaine d'euros.
-- **Neue Haas Display** — tout le texte courant. Police commerciale
-  (Monotype), présente deux fois : en `nhd-500/700/800.woff2` et en copie
-  base64 directement dans `global.css`. **Une licence bureau ne couvre pas la
-  mise en ligne**, ce sont deux licences distinctes. La plus chère des deux.
+| police | usage | licence |
+|---|---|---|
+| **Geist** (variable) | h3 (18 titres de projets) + liens du menu | **OFL** ✅ |
+| Montserrat | h1 du hero, h2 de section, titre de fiche | OFL ✅ |
+| Barlow | `body`, tout le texte courant | OFL ✅ |
+| VT323 | l'invite « SCROLL » | OFL ✅ |
 
-Poppins a été essayée sur les titres le 28/08 puis **écartée par Redha** :
-géométrique et ronde là où Newake est condensée et anguleuse, le titre perdait
-son caractère. Si une substitution est retentée : Poppins demande la graisse
-800 (Newake n'en a qu'une, d'où le 400 imposé), un interlettrage de 0,4 u au
-lieu de 1,5, et la suppression des corrections d'accents en `.14em`. Tout est
-noté dans `global.css`, bloc 9.
+**Ce que Neue Haas Display couvrait vraiment — la fiche précédente était
+fausse.** Elle disait « tout le texte courant ». En réalité le `body` est en
+**Barlow**, et Montserrat prend déjà le h1 et les h2 de section en
+`!important`. Neue Haas ne tenait donc que les **h3** et les **cinq liens du
+menu**. C'est pour ça que le remplacement a pris dix minutes et pas une
+journée. Vérifie toujours où une police est réellement appliquée avant
+d'estimer le coût d'un changement.
 
-Alternatives libres si l'achat est écarté : **Anton** ou **Archivo Black**
-pour les titres, **Barlow** (déjà chargée) ou **Inter** pour le texte.
+**Geist**, publiée par Vercel avec basement.studio, sous OFL : libre pour un
+usage commercial. Néo-grotesque suisse, même famille de formes que Neue Haas.
+Récupérée depuis le paquet npm `geist` (`dist/fonts/geist-sans/`).
+
+**Un seul fichier variable**, `Geist-Variable.woff2`, 70 Ko pour toute la
+plage 100→900 — une requête au lieu de trois, et moins lourd que les trois
+graisses de Neue Haas réunies (78 Ko). Si tu ajoutes une graisse dans le JSX,
+elle existe déjà : rien de plus à télécharger.
+
+⚠️ **Fichiers morts à supprimer du dépôt** : `assets/fonts/nhd-500.woff2`,
+`nhd-700.woff2`, `nhd-800.woff2`. Plus aucune ligne ne les référence.
+
+⚠️ **Le `<link rel="preload">` d'`index.html` pointe maintenant sur Geist**,
+avec `crossorigin` — obligatoire sur un preload de police même en même
+origine, sans lui le fichier est téléchargé deux fois.
+
+⚠️ **Ne remets jamais une police en `base64` dans `global.css`.** Elle passe
+sur le chemin critique du rendu, gonfle de 33 %, et surtout ne se met plus en
+cache séparément : chaque modification d'une ligne de CSS la fait
+retélécharger. C'est ce qui coûtait 103 Ko sur 216 avant le 29/08.
 
 ## 9. LE BLISTER DU PROCESSUS — ce qui a été fait, et le plafond
 

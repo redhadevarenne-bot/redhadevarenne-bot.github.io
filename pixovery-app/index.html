@@ -11,7 +11,7 @@
      JavaScript. Une balise posee par React apres le montage est
      invisible pour eux.
      ============================================================ -->
-<title>Graphiste freelance Gen&egrave;ve &mdash; Cr&eacute;ation de logo &amp; identit&eacute; visuelle</title>
+<title>Pixovery &mdash; Graphiste freelance Gen&egrave;ve, logo &amp; identit&eacute; visuelle</title>
 <meta name="description" content="Redha Devarenne, graphiste freelance &mdash; Gen&egrave;ve, France et &agrave; distance : cr&eacute;ation de logo, identit&eacute; visuelle, charte graphique, print et web design.">
 <meta name="author" content="Redha Devarenne">
 <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
@@ -29,8 +29,16 @@
        parce que iOS rogne les angles.
      - icon-192/512 : Android, via le manifeste.
      Tous sont generes depuis assets/logo-p.png (#7806E5), sans deformation. -->
-<link rel="icon" href="/favicon.ico" sizes="any">
+<!-- Geist porte les titres de projets et les liens du menu, tous visibles
+     des le premier ecran. Sans ce preload, le navigateur ne decouvre la
+     police qu'apres avoir analyse global.css, et le texte clignote dans une
+     police de secours (FOUT). `crossorigin` est OBLIGATOIRE
+     sur un preload de police, meme en meme origine : sans lui le navigateur
+     telecharge le fichier DEUX fois. -->
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/Geist-Variable.woff2" crossorigin>
+<link rel="icon" href="/favicon.ico">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
 <link rel="canonical" href="https://www.pixovery.com/">
@@ -39,7 +47,7 @@
 <meta property="og:type" content="website">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:site_name" content="Pixovery">
-<meta property="og:title" content="Graphiste freelance Gen&egrave;ve &mdash; Cr&eacute;ation de logo &amp; identit&eacute; visuelle">
+<meta property="og:title" content="Pixovery &mdash; Graphiste freelance Gen&egrave;ve, logo &amp; identit&eacute; visuelle">
 <meta property="og:description" content="Redha Devarenne, graphiste freelance &mdash; Gen&egrave;ve, France et &agrave; distance : cr&eacute;ation de logo, identit&eacute; visuelle, charte graphique, print et web design.">
 <meta property="og:url" content="https://www.pixovery.com/">
 <meta property="og:image" content="https://www.pixovery.com/assets/og-pixovery.jpg">
@@ -49,15 +57,14 @@
 
 <!-- Twitter Card. -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Graphiste freelance Gen&egrave;ve &mdash; Cr&eacute;ation de logo &amp; identit&eacute; visuelle">
+<meta name="twitter:title" content="Pixovery &mdash; Graphiste freelance Gen&egrave;ve, logo &amp; identit&eacute; visuelle">
 <meta name="twitter:description" content="Redha Devarenne, graphiste freelance &mdash; Gen&egrave;ve, France et &agrave; distance : cr&eacute;ation de logo, identit&eacute; visuelle, charte graphique, print et web design.">
 <meta name="twitter:image" content="https://www.pixovery.com/assets/og-pixovery.jpg">
 <meta name="twitter:image:alt" content="Pixovery &mdash; graphiste freelance : identit&eacute; visuelle, logo et direction artistique">
 
 <!-- Donnees structurees (schema.org) : Organization, Person, WebSite,
      ItemList des 11 projets. Repris tel quel, sans reformatage. -->
-<script type="application/ld+json">
-{
+<script type="application/ld+json">{
   "@context": "https://schema.org",
   "@graph": [
     {
@@ -389,6 +396,23 @@
           "position": 8,
           "item": {
             "@type": "CreativeWork",
+            "name": "Lightosaurus",
+            "about": {
+              "@type": "Thing",
+              "name": "Illustration"
+            },
+            "description": "Lightosaurus est une illustration originale : un dinosaure à tête d’ampoule émergeant devant une ville néon rétrofuturiste.",
+            "creator": {
+              "@id": "https://www.pixovery.com/#redha"
+            },
+            "image": "https://www.pixovery.com/assets/portfolio/illustration-personnelle-lightosaurus-dinosaure-neon-complet.webp"
+          }
+        },
+        {
+          "@type": "ListItem",
+          "position": 9,
+          "item": {
+            "@type": "CreativeWork",
             "name": "Jung Fu",
             "about": {
               "@type": "Thing",
@@ -405,7 +429,7 @@
         },
         {
           "@type": "ListItem",
-          "position": 9,
+          "position": 10,
           "item": {
             "@type": "CreativeWork",
             "name": "Ô Bonheur D'Emy",
@@ -424,7 +448,7 @@
         },
         {
           "@type": "ListItem",
-          "position": 10,
+          "position": 11,
           "item": {
             "@type": "CreativeWork",
             "name": "Neometris",
@@ -443,7 +467,7 @@
         },
         {
           "@type": "ListItem",
-          "position": 11,
+          "position": 12,
           "item": {
             "@type": "CreativeWork",
             "name": "Crazy Donutz",
@@ -462,7 +486,7 @@
         },
         {
           "@type": "ListItem",
-          "position": 12,
+          "position": 13,
           "item": {
             "@type": "CreativeWork",
             "name": "Aldo Viola",
@@ -481,7 +505,7 @@
         },
         {
           "@type": "ListItem",
-          "position": 13,
+          "position": 14,
           "item": {
             "@type": "CreativeWork",
             "name": "Pimp'Up",
@@ -500,7 +524,7 @@
         },
         {
           "@type": "ListItem",
-          "position": 14,
+          "position": 15,
           "item": {
             "@type": "CreativeWork",
             "name": "Relax",
@@ -519,7 +543,7 @@
         },
         {
           "@type": "ListItem",
-          "position": 15,
+          "position": 16,
           "item": {
             "@type": "CreativeWork",
             "name": "Bretzelle",
@@ -538,7 +562,7 @@
         },
         {
           "@type": "ListItem",
-          "position": 16,
+          "position": 17,
           "item": {
             "@type": "CreativeWork",
             "name": "Mr. Fish",
@@ -557,7 +581,7 @@
         },
         {
           "@type": "ListItem",
-          "position": 17,
+          "position": 18,
           "item": {
             "@type": "CreativeWork",
             "name": "Oldschool Tropical Mix",
@@ -578,8 +602,7 @@
       "numberOfItems": 17
     }
   ]
-}
-</script>
+}</script>
 
 <!-- Polices : reprises a l'identique de <helmet>. Necessaires au design
      (Barlow est la police de corps, VT323 celle de l'ecran CRT). -->

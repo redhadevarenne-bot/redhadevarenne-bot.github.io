@@ -323,7 +323,6 @@ export default class PixoveryPage extends React.Component {
 
     if(/[?&]motion=full/.test(window.location.search))
       document.documentElement.setAttribute('data-motion', 'full');
-
     /* ?verres : aide de calage. Dessine les deux boites de reflet en vert
        par-dessus la figurine, sans animation ni masque. Une capture suffit
        alors a dire si elles tombent sur les verres ou a cote — mesurer la
@@ -2119,7 +2118,10 @@ export default class PixoveryPage extends React.Component {
       if(!lb || !lbImg) return;
       const m = piece.querySelector('[data-piecemedia]'); if(!m) return;
       setZoom(false);
-      lbImg.src = m.currentSrc || m.src; lbImg.alt = m.alt || '';
+      /* `data-full` : la vignette peut etre un RECADRAGE carre et le plein
+         ecran montrer l'image entiere. Sans cet attribut (16 pieces sur 18)
+         rien ne change, on reprend la source de la vignette. */
+      lbImg.src = m.getAttribute('data-full') || m.currentSrc || m.src; lbImg.alt = m.alt || '';
       const h = piece.querySelector('h3'), tag = piece.querySelector('span[style*="uppercase"]');
       if(lbT) lbT.textContent = h ? h.textContent : '';
       if(lbM) lbM.textContent = tag ? tag.textContent : '';
@@ -4029,15 +4031,31 @@ export default class PixoveryPage extends React.Component {
                   </div>
                 </div>
               </article>
-              <article data-piece="pink" data-sujet="Restaurant chinois" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+              <article data-piece="pink" data-sujet="Univers rétrofuturiste" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
                 <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>08</span>
+                <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
+                  {/* La vignette est un RECADRAGE carre de l'illustration (1000x1000) ;
+                      `data-full` donne l'image entiere au plein ecran, ou elle est
+                      zoomable. Sans texte de presentation, openLb reste en mode image
+                      et le curseur passe en zoom-in — c'est voulu pour cette piece. */}
+                  <img data-piecemedia="1" src="/assets/portfolio/illustration-personnelle-lightosaurus-dinosaure-neon.webp" data-full="/assets/portfolio/illustration-personnelle-lightosaurus-dinosaure-neon-complet.webp" alt="Lightosaurus, illustration originale : dinosaure à tête d’ampoule devant une ville néon rétrofuturiste" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
+                  <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
+                  <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
+                </div>
+                <div style={{marginTop: "calc(20*var(--u))"}}>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Illustration</span>
+                  <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Lightosaurus</h3>
+                </div>
+              </article>
+              <article data-piece="violet" data-sujet="Restaurant chinois" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>09</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-restaurant-chinois-jung-fu.webp" alt="Identité visuelle Jung Fu : logo, enseigne et packaging pour un restaurant chinois" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Jung Fu</h3>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
@@ -4054,15 +4072,15 @@ export default class PixoveryPage extends React.Component {
                   </div>
                 </div>
               </article>
-              <article data-piece="violet" data-sujet="Mode responsable &amp; seconde main" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>09</span>
+              <article data-piece="pink" data-sujet="Mode responsable &amp; seconde main" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>10</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-friperie-mode-seconde-main-o-bonheur-demy.webp" alt="Identité visuelle Ô Bonheur D'Emy : logo, étiquettes et tote bag pour une friperie de mode seconde main" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Ô Bonheur D'Emy</h3>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
@@ -4080,15 +4098,15 @@ export default class PixoveryPage extends React.Component {
                   </div>
                 </div>
               </article>
-              <article data-piece="pink" data-sujet="Visites virtuelles &amp; photographie" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>10</span>
+              <article data-piece="violet" data-sujet="Visites virtuelles &amp; photographie" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>11</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-visite-virtuelle-matterport-neometris.webp" alt="Identité visuelle Neometris : logo, plaquette et interface pour un studio de visites virtuelles Matterport" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Neometris</h3>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
@@ -4103,15 +4121,15 @@ export default class PixoveryPage extends React.Component {
                   </div>
                 </div>
               </article>
-              <article data-piece="violet" data-sujet="Pâtisserie / Donuts" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>11</span>
+              <article data-piece="pink" data-sujet="Pâtisserie / Donuts" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>12</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/creation-logo-identite-visuelle-donuts-crazy-donutz.webp" alt="Création de logo et identité visuelle Crazy Donutz : packaging, boîtes et carte pour une boutique de donuts" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Crazy Donutz</h3>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
@@ -4127,15 +4145,15 @@ export default class PixoveryPage extends React.Component {
                   </div>
                 </div>
               </article>
-              <article data-piece="pink" data-sujet="Photographie de paysage" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>12</span>
+              <article data-piece="violet" data-sujet="Photographie de paysage" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>13</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-photographe-nature-aldo-viola.webp" alt="Identité visuelle Aldo Viola photographe : logo hibou doré à diaphragmes sur pochette noire, tirages noir et blanc et boîtier reflex" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Aldo Viola</h3>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
@@ -4151,15 +4169,15 @@ export default class PixoveryPage extends React.Component {
                   </div>
                 </div>
               </article>
-              <article data-piece="violet" data-sujet="Accessoires de mode" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>13</span>
+              <article data-piece="pink" data-sujet="Accessoires de mode" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>14</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/identite-visuelle-accessoires-mode-pimp-up-paris.webp" alt="Identité visuelle Pimp'Up Paris : logo, coffret et campagne pour une marque d'accessoires de mode" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Pimp'Up</h3>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
@@ -4176,15 +4194,15 @@ export default class PixoveryPage extends React.Component {
                   </div>
                 </div>
               </article>
-              <article data-piece="pink" data-sujet="Massage &amp; Wellness" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>14</span>
+              <article data-piece="violet" data-sujet="Massage &amp; Wellness" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>15</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/creation-logo-massage-bien-etre-relax-wellness.webp" alt="Identité visuelle Relax Massage &amp; Wellness : logo lotus turquoise, cartes de visite, étiquettes et serviettes" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Relax</h3>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
@@ -4196,15 +4214,15 @@ export default class PixoveryPage extends React.Component {
                   </div>
                 </div>
               </article>
-              <article data-piece="violet" data-sujet="Restauration" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>15</span>
+              <article data-piece="pink" data-sujet="Restauration" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>16</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/creation-logo-packaging-bretzel-restauration-bretzelle.webp" alt="Identité visuelle Bretzelle : logo bretzel doré, sacs kraft, sachets et affiche pour un concept de restauration" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Identité visuelle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Bretzelle</h3>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
@@ -4221,15 +4239,15 @@ export default class PixoveryPage extends React.Component {
                   </div>
                 </div>
               </article>
-              <article data-piece="pink" data-sujet="Restaurant de livraison" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>16</span>
+              <article data-piece="violet" data-sujet="Restaurant de livraison" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>17</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/creation-logo-packaging-fish-and-chips-mr-fish.webp" alt="Création de logo Mr. Fish : packaging fish and chips à emporter, sachet et gobelet" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Création de logo</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Mr. Fish</h3>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
@@ -4246,15 +4264,15 @@ export default class PixoveryPage extends React.Component {
                   </div>
                 </div>
               </article>
-              <article data-piece="violet" data-sujet="Bar L’Autruche, Toulouse" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
-                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>17</span>
+              <article data-piece="pink" data-sujet="Bar L’Autruche, Toulouse" style={{flex: "0 0 auto", width: "calc(360*var(--u))", position: "relative"}}>
+                <span data-piecenum="1" style={{position: "absolute", top: "calc(-26*var(--u))", left: "calc(-14*var(--u))", fontWeight: "800", fontSize: "calc(74*var(--tu))", lineHeight: "1", color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,.16)", zIndex: "3", pointerEvents: "none", transition: "-webkit-text-stroke-color .5s ease"}}>18</span>
                 <div data-pieceframe="1" style={{position: "relative", overflow: "hidden", aspectRatio: "1/1", borderRadius: "calc(4*var(--u))", background: "linear-gradient(150deg,#1B1020 0%,#0B0B10 55%,#150F1C 100%)", transition: "transform .8s cubic-bezier(.16,1,.3,1)"}}>
                   <img data-piecemedia="1" src="/assets/portfolio/affiche-soiree-oldschool-tropical-mix-another-world.webp" alt="Affiche de soirée Oldschool Tropical Mix : collage tropical, toucan et flamants roses sur abribus, soirée reggae et calypso à Toulouse" width="1000" height="1000" loading="lazy" decoding="async" style={{position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", transition: "transform .9s cubic-bezier(.16,1,.3,1)"}} />
                   <i data-piecesweep="1" style={{position: "absolute", top: "0", left: "-30%", width: "30%", height: "100%", background: "linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.13),rgba(255,255,255,0))", transform: "skewX(-16deg)", opacity: "0", zIndex: "2"}}></i>
                   <i data-pieceveil="1" style={{position: "absolute", inset: "0", background: "linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.55) 100%)", opacity: ".9", transition: "opacity .6s ease"}}></i>
                 </div>
                 <div style={{marginTop: "calc(20*var(--u))"}}>
-                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--violet-b)", marginBottom: "calc(8*var(--u))"}}>Affiche événementielle</span>
+                  <span style={{display: "inline-block", fontSize: "calc(9.5*var(--tu))", letterSpacing: "calc(1.6*var(--u))", textTransform: "uppercase", color: "var(--pink-b)", marginBottom: "calc(8*var(--u))"}}>Affiche événementielle</span>
                   <h3 style={{margin: "0", fontWeight: "700", fontSize: "calc(26*var(--tu))", lineHeight: "1.05", color: "#fff"}}>Oldschool Tropical Mix</h3>
                   {/* Presentation lue par openLb : le plein ecran passe alors en
                       fiche deux colonnes. Cachee ici, la vignette garde sa legende. */}
@@ -4472,12 +4490,12 @@ export default class PixoveryPage extends React.Component {
                     d'ecran. tabIndex -1 et autoComplete off par precaution. */}
                 <input type="checkbox" name="botcheck" tabIndex="-1" autoComplete="off" aria-hidden="true" style={{display: "none"}} />
                 <div data-reveal="1" style={{display: "flex", gap: "calc(18*var(--u))"}}>
-                  <input type="text" name="nom" placeholder="Nom" autoComplete="family-name" style={{flex: "1", minWidth: "0", width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
-                  <input type="text" name="prenom" placeholder="Prénom" autoComplete="given-name" style={{flex: "1", minWidth: "0", width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
+                  <label htmlFor="f-nom" className="srOnly">Nom</label><input type="text" name="nom" id="f-nom" placeholder="Nom" autoComplete="family-name" style={{flex: "1", minWidth: "0", width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
+                  <label htmlFor="f-prenom" className="srOnly">Prénom</label><input type="text" name="prenom" id="f-prenom" placeholder="Prénom" autoComplete="given-name" style={{flex: "1", minWidth: "0", width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
                 </div>
-                <input data-reveal="1" type="email" name="email" placeholder="Email" autoComplete="email" style={{width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
-                <input data-reveal="1" type="text" name="sujet" placeholder="Sujet" style={{width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
-                <textarea data-reveal="1" name="message" placeholder="Votre message" rows="3" style={{width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", height: "calc(68*var(--u))", padding: "calc(4*var(--u)) 0 calc(8*var(--u))", lineHeight: "calc(22*var(--tu))", resize: "vertical", transition: "border-color .35s ease"}}></textarea>
+                <label htmlFor="f-email" className="srOnly">Email</label><input data-reveal="1" type="email" name="email" id="f-email" placeholder="Email" autoComplete="email" style={{width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
+                <label htmlFor="f-sujet" className="srOnly">Sujet</label><input data-reveal="1" type="text" name="sujet" id="f-sujet" placeholder="Sujet" style={{width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", padding: "0 0 calc(8*var(--u))", height: "calc(36*var(--u))", transition: "border-color .35s ease"}} />
+                <label htmlFor="f-message" className="srOnly">Votre message</label><textarea data-reveal="1" name="message" id="f-message" placeholder="Votre message" rows="3" style={{width: "100%", background: "transparent", border: "0", borderBottom: "1px solid rgba(255,255,255,.18)", borderRadius: "0", color: "#fff", fontSize: "calc(15*var(--tu))", height: "calc(68*var(--u))", padding: "calc(4*var(--u)) 0 calc(8*var(--u))", lineHeight: "calc(22*var(--tu))", resize: "vertical", transition: "border-color .35s ease"}}></textarea>
                 <button data-reveal="1" type="submit" data-magnetic="1" style={{display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "calc(11*var(--u))", width: "100%", height: "calc(44*var(--u))", marginTop: "calc(6*var(--u))", background: "linear-gradient(90deg,var(--pink) 0%,#FF3D8F 100%)", borderRadius: "calc(6*var(--u))", color: "#fff", fontSize: "calc(12*var(--tu))", fontWeight: "600", letterSpacing: "calc(.8*var(--u))", textTransform: "uppercase", transform: "translate(var(--mx,0px),var(--my,0px))", transition: "transform .35s cubic-bezier(.16,1,.3,1), background .25s ease"}}>
                   <svg viewBox="0 0 24 24" aria-hidden="true" style={{width: "calc(17*var(--u))", height: "calc(17*var(--u))", fill: "#fff"}}><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"></path></svg>
                   Envoyer
