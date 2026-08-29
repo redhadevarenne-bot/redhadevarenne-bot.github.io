@@ -605,10 +605,13 @@
 }</script>
 
 <!-- Polices : reprises a l'identique de <helmet>. Necessaires au design
-     (Barlow est la police de corps, VT323 celle de l'ecran CRT). -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Montserrat:wght@800;900&family=Poppins:wght@700&family=VT323&display=swap" rel="stylesheet">
+     (Barlow est la police de corps, VT323 celle de l'ecran CRT).
+     29/08 : auto-hebergees. Plus aucune requete vers Google, donc plus
+     aucune IP de visiteur envoyee chez eux. Poppins a ete supprimee au
+     passage : elle etait telechargee et jamais utilisee. Les .woff2 et le
+     CSS sont generes par setup-fonts.ps1 a la racine du projet. -->
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/barlow-400.woff2" crossorigin>
+<link rel="stylesheet" href="/assets/fonts/google-fonts.css">
 
 <!-- Prechargement de l'image du hero, comme aujourd'hui. -->
 <!-- 28/08 : le prechargement visait hero-cut-a.webp, qui n'est plus affiche
