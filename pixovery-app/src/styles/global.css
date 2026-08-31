@@ -2235,3 +2235,80 @@ footer, footer a, small{
   white-space:nowrap;
   border:0;
 }
+
+/* ==========================================================================
+   CONTACT — LIBELLES FLOTTANTS                                    (31/08/26)
+   --------------------------------------------------------------------------
+   Le placeholder disparaissait des la premiere frappe : cinq gelules
+   remplies et plus une seule etiquette. Le libelle sort donc du champ et
+   se pose AU-DESSUS. Pas dedans : la gelule fait 14u de padding pour une
+   ligne de 15tu, il n'y a pas la place d'y loger deux etages.
+
+   Chaque champ est enveloppe dans `.champ` (position:relative + une reserve
+   de 16u en haut, ou le libelle va se ranger). Le libelle suit l'input dans
+   le DOM — c'est ce qui permet le selecteur `+`.
+
+   Les deux etats sont des BOITES EXPLICITES (top/bottom), pas un `transform`
+   calcule : au repos la boite epouse exactement la gelule, en position haute
+   elle epouse exactement la reserve. Aucune mesure de hauteur de ligne a
+   deviner, et les deux s'interpolent proprement.
+
+   `placeholder=" "` (une espace) dans le JSX : invisible, mais indispensable
+   — c'est lui qui fait basculer `:placeholder-shown`.
+   ========================================================================== */
+#contact form{gap:calc(4*var(--u)) !important}
+#contact form > button[type="submit"]{margin-top:calc(16*var(--u)) !important}
+#contact form > [data-formmsg]{margin-top:calc(10*var(--u))}
+
+#contact .champ{position:relative; padding-top:calc(16*var(--u))}
+#contact form > div > .champ{flex:1; min-width:0}
+
+#contact .champ > label{
+  position:absolute;
+  left:calc(24*var(--u)); right:calc(24*var(--u));
+  top:calc(16*var(--u)); bottom:0;
+  display:flex; align-items:center;
+  font-size:calc(15*var(--tu));
+  line-height:1;
+  color:rgba(255,255,255,.34);
+  pointer-events:none;          /* le clic doit atteindre le champ */
+  white-space:nowrap; overflow:hidden;
+  transition:top .26s cubic-bezier(.16,1,.3,1),
+             bottom .26s cubic-bezier(.16,1,.3,1),
+             font-size .26s cubic-bezier(.16,1,.3,1),
+             color .26s ease;
+}
+/* le message commence en haut de sa boite, pas au milieu */
+#contact .champ--zone > label{align-items:flex-start; padding-top:calc(14*var(--u))}
+
+#contact .champ > input:focus + label,
+#contact .champ > input:not(:placeholder-shown) + label,
+#contact .champ > textarea:focus + label,
+#contact .champ > textarea:not(:placeholder-shown) + label{
+  top:0; bottom:calc(100% - 16*var(--u));
+  align-items:center; padding-top:0;
+  font-size:calc(11*var(--tu));
+  color:rgba(255,255,255,.62);
+}
+/* au focus le libelle s'allume, comme le liseré du champ */
+#contact .champ > input:focus + label,
+#contact .champ > textarea:focus + label{color:rgba(255,255,255,.92)}
+
+@media (max-width:768px){
+  #contact form{gap:4px !important}
+  #contact form > button[type="submit"]{margin-top:20px !important}
+  #contact form > [data-formmsg]{margin-top:10px}
+  #contact .champ{padding-top:16px}
+  #contact .champ > label{
+    left:20px; right:20px; top:16px;
+    font-size:16px;              /* meme corps que le champ : iOS ne zoome pas */
+  }
+  #contact .champ--zone > label{padding-top:14px}
+  #contact .champ > input:focus + label,
+  #contact .champ > input:not(:placeholder-shown) + label,
+  #contact .champ > textarea:focus + label,
+  #contact .champ > textarea:not(:placeholder-shown) + label{
+    bottom:calc(100% - 16px);
+    font-size:11px;
+  }
+}

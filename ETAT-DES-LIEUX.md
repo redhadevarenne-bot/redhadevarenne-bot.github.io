@@ -9,6 +9,22 @@ Point de reprise. La carte technique reste dans `CLAUDE.md` ; ce fichier dit
 > cher que pas de fichier du tout. Si tu changes quelque chose, note-le ici
 > avant de fermer la session.
 
+## OÙ EN EST LE PROJET — à lire en premier
+
+Le site est **en ligne, indexé, sans risque juridique ouvert**.
+
+| | état |
+|---|---|
+| Domaine `www.pixovery.com` | actif, HTTPS, **expire le 28/08/2027** |
+| Google Search Console | propriété validée (compte `pixovery@gmail.com`), accueil indexée |
+| Mentions légales | complètes |
+| Polices | licence libre, et **toutes auto-hébergées** (plus une seule requête chez Google) |
+| Formulaire de contact | envoie réellement (Web3Forms), champs accessibles |
+| Portfolio | 18 pièces |
+| `global.css` | 115 Ko (était 216 le matin du 29) |
+
+Ce qui reste est en bas de ce fichier, et **rien n'est urgent**.
+
 ## Pour voir le résultat
 
 ```powershell
@@ -44,12 +60,69 @@ est *non suivi*, pas ignoré — donc en local tout marche, et en ligne c'est un
 image, l'ajouter explicitement, et vérifier :
 
 ```powershell
-@("img10-cut.webp","proc-v7.webp","pot-solide.webp","filaire-repos.webp","perso-tour-v2.webp","perso-filaire-v2.webp") | % { git ls-files --error-unmatch "pixovery-app/public/assets/$_" 2>$null | Out-Null; if ($LASTEXITCODE -ne 0) { "NON SUIVI -> $_" } }
+@("img10-cut.webp","pot-solide.webp","filaire-repos.webp","perso-tour-v2.webp","perso-filaire-v2.webp","perso-filaire-mobile.webp","fonts/Geist-Variable.woff2","portfolio/illustration-personnelle-lightosaurus-dinosaure-neon.webp","portfolio/illustration-personnelle-lightosaurus-dinosaure-neon-complet.webp") | % { git ls-files --error-unmatch "pixovery-app/public/assets/$_" 2>$null | Out-Null; if ($LASTEXITCODE -ne 0) { "NON SUIVI -> $_" } }
 ```
 
 ---
 
+# CE QUI A CHANGÉ LE 31 AOÛT
+
+## LIBELLÉS FLOTTANTS DU FORMULAIRE — FAIT ✅
+
+**Le point n°1 de « CE QUI RESTE » est réglé. Ne le rouvre pas.** Validé à
+l'œil par Redha le 31/08 sur le dev server, desktop.
+
+Le `placeholder` gris disparaissait à la première frappe : cinq gélules
+remplies et plus une seule étiquette. Le libellé sort maintenant du champ et
+se pose **au-dessus**, plus petit, dès la saisie ou le focus.
+
+- JSX : chaque champ est enveloppé dans `<div className="champ">`, et le
+  `<label>` est passé **après** l'input (c'est le sélecteur `+` qui fait
+  tout). Les `className="srOnly"` ont sauté, les libellés sont visibles.
+  Le `data-reveal` est monté du champ vers l'enveloppe.
+- `placeholder=" "` — **une espace, pas vide.** Invisible, mais c'est lui qui
+  fait basculer `:placeholder-shown`. Le retirer casse tout.
+- CSS : bloc « CONTACT — LIBELLÉS FLOTTANTS » en fin de `global.css`.
+
+**Pourquoi au-dessus et pas dedans.** La gélule a 14u de padding pour une
+ligne de 15tu : il n'y a pas la place d'y loger deux étages. `.champ` réserve
+donc 16u au-dessus, et le `gap` du formulaire descend de 14u à 4u pour
+compenser — sans ça le bloc Contact s'allongeait de ~80 px.
+
+**Les deux états sont des boîtes explicites** (`top`/`bottom`), pas un
+`transform` calculé : au repos la boîte épouse la gélule, en haut elle épouse
+la réserve. Aucune hauteur de ligne à deviner. Ne le réécris pas en
+`translateY(...) scale(...)` — ça redevient du calcul à l'aveugle qui casse
+au moindre changement de corps.
+
+⚠️ **Non vérifié sur téléphone.** Les surcharges mobiles (`max-width:768px`)
+sont écrites — libellé à 16 px au repos pour qu'iOS ne zoome pas, 11 px en
+haut — mais personne ne les a regardées sur un vrai écran. À faire au
+prochain passage tactile.
+
 # CE QUI A CHANGÉ LE 29 AOÛT
+
+## POLICES AUTO-HÉBERGÉES — DERNIER POINT RGPD FERMÉ (29/08, soir)
+
+**C'est fait, en ligne, vérifié. Ne rouvre pas ce point.** Barlow (400 à 800),
+Montserrat (800, 900) et VT323 ne viennent plus de `fonts.googleapis.com` :
+les seize `.woff2` sont dans `public/assets/fonts/`, déclarés par
+`public/assets/fonts/google-fonts.css`. Vérifié sur le site en ligne : zéro
+requête vers `fonts.gstatic.com`. **Poppins a été supprimée** — elle était
+téléchargée à chaque visite et utilisée nulle part.
+
+Dans `index.html`, les trois `<link>` vers Google sont remplacés par deux
+lignes : un `preload` de `barlow-400.woff2` (la police de corps, certaine
+d'être utilisée) et le `<link>` vers `google-fonts.css`.
+
+**Le script `setup-fonts.ps1` à la racine régénère tout.** Il récupère la
+feuille de style de Google avec un user-agent Chrome — sans ça Google renvoie
+du TTF au lieu du WOFF2 —, ne garde que les jeux `latin` et `latin-ext`, et
+réécrit le CSS avec les chemins locaux. À relancer si une graisse manque ou
+si une famille est ajoutée. Ne pas éditer `google-fonts.css` à la main.
+
+⚠️ Ces fichiers vivent dans `public/`, donc `git add pixovery-app/src` ne les
+ramasse pas. Ils ont été ajoutés explicitement.
 
 ## PORTFOLIO : 18 PIÈCES, « LIGHTOSAURUS » AJOUTÉE EN 8ᵉ
 
@@ -751,68 +824,38 @@ minimum sur les champs, sinon iOS zoome tout seul à la saisie).
 
 ---
 
-# CE QUI RESTE — par ordre de ce que ça coûte de ne pas le faire
+# CE QUI RESTE — liste refaite le 29 août au soir
 
-**1. Mentions légales : cinq « à compléter » affichés en ligne.** Adresse
-professionnelle, puis hébergeur / raison sociale / adresse / téléphone de
-l'hébergeur. L'hébergeur est GitHub Pages → **GitHub, Inc., 88 Colin P. Kelly
-Jr. Street, San Francisco, CA 94107, États-Unis**. Manquent : l'adresse
-professionnelle de Redha et son statut (auto-entrepreneur français avec SIRET ?
-entreprise individuelle suisse ?), qui déterminent les mentions obligatoires.
+**Tout ce qui figurait ici la veille est réglé** : mentions légales, Search
+Console, labels du formulaire, prototypes dans `public/`, licences de polices,
+perso rose sur téléphone, favicon, image de partage. **Et depuis le 29 au soir,
+les polices auto-hébergées.** Ne rouvre aucun de ces points sans avoir lu la
+section « CE QUI A CHANGÉ LE 29 AOÛT » plus haut.
 
-**2. Google Search Console : le site n'est pas déclaré.** Débloqué depuis que
-le domaine existe (28/08 au soir) — avant, ça n'aurait servi à rien. Tout le travail SEO
-du 25 (17 secteurs dans le JSON-LD, ciblage Genève) ne sert à rien tant que
-Google ne sait pas que le site existe. **C'est le seul point de la liste qui
-peut ramener des clients.** Marche à suivre, décidée le 28 août, à reprendre
-telle quelle :
+**Il ne reste aucun risque ouvert sur ce projet, ni juridique ni RGPD.** Les
+deux points ci-dessous sont du confort, pas de la dette.
 
-> **a. Créer la propriété.** `search.google.com/search-console`, connecté avec
-> `redhadevarenne@gmail.com`. Choisir **« Préfixe de l'URL »** (colonne de
-> droite) et entrer exactement `https://www.pixovery.com/`.
-> Pas la version sans `www` : le `CNAME` porte `www.pixovery.com` et la balise
-> canonique dit la même chose — les trois doivent concorder. L'autre option,
-> « Domaine », passe par un enregistrement DNS chez le registrar : plus
-> puissant, plus long, inutile ici.
->
-> **b. Vérifier par balise HTML.** Déplier « Balise HTML », récupérer la ligne
-> `<meta name="google-site-verification" content="…" />`, la poser dans le
-> `<head>` de `pixovery-app/index.html`, **pousser, attendre la fin du
-> déploiement**, puis cliquer sur « Vérifier ».
-> ⚠️ Ne pas cliquer avant que le déploiement soit fini : Google lit la page en
-> ligne, pas le disque. En cas d'échec il impose souvent une attente avant de
-> pouvoir réessayer.
->
-> **c. Soumettre le sitemap.** Menu de gauche → Sitemaps → entrer
-> `sitemap.xml` → Envoyer. Puis coller `https://www.pixovery.com/` dans la
-> barre de recherche en haut et cliquer sur « Demander une indexation » : la
-> page d'accueil passe en file prioritaire.
->
-> **Délai normal : de quelques jours à trois semaines.** Le rapport
-> « Performances » reste vide au début — ce n'est pas un échec.
+**1. Le libellé flottant du formulaire de Contact. — FAIT LE 31/08.** Voir
+la section « CE QUI A CHANGÉ LE 31 AOÛT » en haut. Reste seulement à le
+regarder sur un vrai téléphone.
 
-**3. Les cinq champs du formulaire n'ont pas de label.** Ils fonctionnent au
-`placeholder` seul : le texte disparaît dès qu'on tape, les lecteurs d'écran
-n'annoncent rien, le remplissage automatique ne reconnaît pas les champs.
-Maintenant que le formulaire envoie vraiment, chaque friction se paie.
+**2. Le reset `box-sizing`** (voir Pièges permanents n°1). À faire **à froid**,
+en reparcourant toute la page ensuite. Ce n'est pas un travail de fin de
+session.
 
-**4. Neuf mégaoctets de prototypes publiés sur le domaine.** Dix fichiers
-`proto-*.html` dans `pixovery-app/public/`, dont `proto-full-solo.html` à
-4,2 Mo, plus `_tmp.html` et `intro-tv-v1.html`. `robots.txt` les cache de
-Google mais ils sont publics et dans le dépôt. À sortir de `public/`.
+## Ce qui ferait vraiment avancer le projet maintenant
 
-**5. La licence des deux polices** (point 8 ci-dessus). C'est le seul vrai
-risque juridique du projet, devant les mentions légales.
+Ce ne sont plus des corrections, ce sont des décisions.
 
-**6. Le ménage des planches du processus** : `proc-v5.webp` et `proc-v7.webp`
-ne servent plus, seule `proc-v5-net.webp` est chargée. Le `console.log` de
-`spin()` a été retiré le 28/08.
-
-**7. Le reset `box-sizing`** (voir Pièges permanents n°1). À faire à froid.
-
-**8. Vérifier la fluidité du hero sur un vrai téléphone.** Le mode `LEGER` du
-26 n'a jamais été mesuré. Si ça saccade encore, passer à `?light=svc`
-(parallaxe 3D des disquettes) — la mémoire des planches, elle, est réglée.
+- **Deux ou trois illustrations de plus dans le portfolio.** Lightosaurus est
+  seule au milieu de 17 projets de branding : ça se lit comme un accident, pas
+  comme un domaine du travail. C'est le seul geste qui change ce que le site
+  raconte.
+- **Attendre, pour Google.** Le site est indexé depuis le 29/08. Le rapport
+  « Performances » restera vide un moment. Le regarder tous les jours ne fera
+  rien avancer ; ce qui compte désormais, c'est du contenu réel et des liens
+  entrants, pas de la configuration.
+- **Renouveler le domaine avant le 28 août 2027**, sinon le site tombe.
 
 ## Abandonné volontairement
 
