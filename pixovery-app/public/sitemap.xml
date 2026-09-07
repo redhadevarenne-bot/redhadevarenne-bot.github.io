@@ -2,24 +2,20 @@
 <!-- Ne lister que des pages REELLES et abouties. Une etude de cas encore
      vide de texte fait plus de mal que de bien : Google la voit mince,
      et ce jugement rejaillit sur le site entier. On ajoute chaque page
-     de projet ici le jour ou son texte est ecrit, pas avant. -->
+     de projet ici le jour ou son texte est ecrit, pas avant.
+
+     Ne JAMAIS lister ici une page qui porte <meta name="robots"
+     content="noindex">. C'est une contradiction : le sitemap dit
+     "indexe ca", la page dit "ne l'indexe pas". Search Console la
+     signale par un mail "Exclue par la balise noindex" (07/09/2026).
+     mentions-legales.html et confidentialite.html sont en noindex
+     volontairement (elles n'apportent rien en referencement), donc
+     elles ont ete retirees d'ici ce jour-la. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://www.pixovery.com/</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-07</lastmod>
     <changefreq>monthly</changefreq>
     <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://www.pixovery.com/mentions-legales.html</loc>
-    <lastmod>2026-08-25</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  <url>
-    <loc>https://www.pixovery.com/confidentialite.html</loc>
-    <lastmod>2026-08-25</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.2</priority>
   </url>
 </urlset>

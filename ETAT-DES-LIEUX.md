@@ -65,6 +65,34 @@ image, l'ajouter explicitement, et vérifier :
 
 ---
 
+# CE QUI A CHANGÉ LE 7 SEPTEMBRE
+
+## SITEMAP × NOINDEX — LA CONTRADICTION EST LEVÉE ✅
+
+Mail Search Console du 06/09 au soir : « Exclue par la balise "noindex" ».
+Ce n'était **pas une panne** : `mentions-legales.html` et
+`confidentialite.html` portent chacune, ligne 10,
+`<meta name="robots" content="noindex, follow">` — voulu — **et** étaient
+listées dans `public/sitemap.xml`. Le sitemap disait « indexe ça », la page
+disait « ne l'indexe pas ». Google signale toujours ce désaccord.
+
+**Corrigé en retirant les deux entrées du sitemap**, pas en retirant le
+`noindex` : des pages juridiques n'apportent rien en référencement, et les
+indexer ne ferait que diluer. `sitemap.xml` ne contient donc plus qu'une
+seule URL, l'accueil — ce qui est normal pour un site d'une page. `lastmod`
+passé au 2026-09-07.
+
+**La règle est écrite en commentaire en tête du fichier :** ne jamais lister
+dans le sitemap une page qui porte un `noindex`. Si tu ajoutes un jour une
+page de projet, vérifie les deux endroits.
+
+⚠️ `sitemap.xml` vit dans `public/`, donc `git add pixovery-app/src` ne le
+ramasse pas. À ajouter explicitement.
+
+**Rien à faire de plus.** Le message n'a pas besoin d'être « validé » dans
+Search Console : au prochain passage du robot, le motif disparaîtra de
+lui-même. Ne relance pas d'inspection tous les jours.
+
 # CE QUI A CHANGÉ LE 31 AOÛT
 
 ## LIBELLÉS FLOTTANTS DU FORMULAIRE — FAIT ✅
